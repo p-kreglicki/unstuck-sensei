@@ -175,3 +175,19 @@ Proceed with Option 1. Complete all local repository and scaffolding work first,
 **Learnings:**
 - The development session storage path is working correctly for the Phase 1 auth shell and restart flows.
 - The remaining open acceptance gaps are no longer around core auth or window behavior; they are around production storage guarantees and future auth-aware tray menu behavior.
+
+### 2026-03-15 - Auth-Aware Tray Menu Integration
+
+**By:** Codex
+
+**Actions:**
+- Added a Rust command to rebuild the tray menu based on current auth state.
+- Updated the React auth provider to notify Rust whenever the Supabase session changes.
+- Changed the tray menu to use two concrete states:
+  - signed out: `Sign In`, `Quit`
+  - signed in: `Start Session`, `Pause Detection`, `Settings`, `Quit`
+- Validated the implementation with `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml`.
+
+**Learnings:**
+- This behavior required a real JS-to-Rust bridge; it could not be solved inside the existing static tray setup.
+- The tray menu auth-state behavior is now manually verified in both directions: signed out and signed in.

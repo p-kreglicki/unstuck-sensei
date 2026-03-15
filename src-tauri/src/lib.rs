@@ -9,6 +9,55 @@ use tauri::{
     AppHandle, Manager, RunEvent, WindowEvent, Wry,
 };
 
+const TRAY_ID: &str = "main";
+const MENU_SIGN_IN: &str = "sign-in";
+const MENU_START_SESSION: &str = "start-session";
+const MENU_PAUSE_DETECTION: &str = "pause-detection";
+const MENU_SETTINGS: &str = "settings";
+const MENU_QUIT: &str = "quit";
+
+fn build_tray_menu<M: Manager<Wry>>(
+    manager: &M,
+    signed_in: bool,
+) -> tauri::Result<tauri::menu::Menu<Wry>> {
+    let quit = MenuItemBuilder::with_id(MENU_QUIT, "Quit").build(manager)?;
+
+    if signed_in {
+        let start_session =
+            MenuItemBuilder::with_id(MENU_START_SESSION, "Start Session").build(manager)?;
+        let pause_detection =
+            MenuItemBuilder::with_id(MENU_PAUSE_DETECTION, "Pause Detection")
+                .enabled(false)
+                .build(manager)?;
+        let settings = MenuItemBuilder::with_id(MENU_SETTINGS, "Settings").build(manager)?;
+        let separator = PredefinedMenuItem::separator(manager)?;
+
+        MenuBuilder::new(manager)
+            .items(&[
+                &start_session,
+                &pause_detection,
+                &separator,
+                &settings,
+                &quit,
+            ])
+            .build()
+    } else {
+        let sign_in = MenuItemBuilder::with_id(MENU_SIGN_IN, "Sign In").build(manager)?;
+
+        MenuBuilder::new(manager).items(&[&sign_in, &quit]).build()
+    }
+}
+
+#[tauri::command]
+fn update_tray_auth_state(app: AppHandle<Wry>, signed_in: bool) -> Result<(), String> {
+    let tray = app
+        .tray_by_id(TRAY_ID)
+        .ok_or_else(|| "Main tray icon not available.".to_string())?;
+    let menu = build_tray_menu(&app, signed_in).map_err(|error| error.to_string())?;
+
+    tray.set_menu(Some(menu)).map_err(|error| error.to_string())
+}
+
 fn show_main_window(app: &AppHandle<Wry>, window_visible: &AtomicBool) {
     #[cfg(target_os = "macos")]
     let _ = app.show();
@@ -37,6 +86,7 @@ pub fn run() {
     let window_visible = Arc::new(AtomicBool::new(true));
 
     let app = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![update_tray_auth_state])
         .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
@@ -58,73 +108,59 @@ pub fn run() {
             let window_visible = Arc::clone(&window_visible);
 
             move |app| {
-            let start_session = MenuItemBuilder::with_id("start-session", "Start Session").build(app)?;
-            let pause_detection = MenuItemBuilder::with_id("pause-detection", "Pause Detection")
-                .enabled(false)
-                .build(app)?;
-            let settings = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
-            let separator = PredefinedMenuItem::separator(app)?;
-            let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+                let tray_menu = build_tray_menu(app, false)?;
 
-            let tray_menu = MenuBuilder::new(app)
-                .items(&[
-                    &start_session,
-                    &pause_detection,
-                    &separator,
-                    &settings,
-                    &quit,
-                ])
-                .build()?;
+                let mut tray_builder = TrayIconBuilder::with_id(TRAY_ID)
+                    .menu(&tray_menu)
+                    .tooltip("Unstuck Sensei")
+                    .show_menu_on_left_click(false)
+                    .on_menu_event({
+                        let window_visible = Arc::clone(&window_visible);
 
-            let mut tray_builder = TrayIconBuilder::with_id("main")
-                .menu(&tray_menu)
-                .tooltip("Unstuck Sensei")
-                .show_menu_on_left_click(false)
-                .on_menu_event({
-                    let window_visible = Arc::clone(&window_visible);
+                        move |app, event| match event.id().as_ref() {
+                            MENU_SIGN_IN | MENU_START_SESSION | MENU_SETTINGS => {
+                                show_main_window(app, &window_visible)
+                            }
+                            MENU_QUIT => app.exit(0),
+                            _ => {}
+                        }
+                    })
+                    .on_tray_icon_event({
+                        let window_visible = Arc::clone(&window_visible);
 
-                    move |app, event| match event.id().as_ref() {
-                        "start-session" | "settings" => show_main_window(app, &window_visible),
-                        "quit" => app.exit(0),
-                        _ => {}
+                        move |tray, event| match event {
+                            TrayIconEvent::Click {
+                                button: MouseButton::Left,
+                                button_state: MouseButtonState::Up,
+                                ..
+                            } => toggle_main_window(&tray.app_handle(), &window_visible),
+                            TrayIconEvent::DoubleClick {
+                                button: MouseButton::Left,
+                                ..
+                            } => toggle_main_window(&tray.app_handle(), &window_visible),
+                            _ => {}
+                        }
+                    });
+
+                if let Some(default_icon) = app.default_window_icon() {
+                    tray_builder = tray_builder.icon(default_icon.clone());
+
+                    #[cfg(target_os = "macos")]
+                    {
+                        tray_builder = tray_builder.icon_as_template(true);
                     }
-                })
-                .on_tray_icon_event({
-                    let window_visible = Arc::clone(&window_visible);
+                }
 
-                    move |tray, event| match event {
-                        TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            button_state: MouseButtonState::Up,
-                            ..
-                        } => toggle_main_window(&tray.app_handle(), &window_visible),
-                        TrayIconEvent::DoubleClick {
-                            button: MouseButton::Left,
-                            ..
-                        } => toggle_main_window(&tray.app_handle(), &window_visible),
-                        _ => {}
+                let _tray = tray_builder.build(app)?;
+
+                if std::env::args().any(|arg| arg == "--minimized") {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                        window_visible.store(false, Ordering::SeqCst);
                     }
-                });
-
-            if let Some(default_icon) = app.default_window_icon() {
-                tray_builder = tray_builder.icon(default_icon.clone());
-
-                #[cfg(target_os = "macos")]
-                {
-                    tray_builder = tray_builder.icon_as_template(true);
                 }
-            }
 
-            let _tray = tray_builder.build(app)?;
-
-            if std::env::args().any(|arg| arg == "--minimized") {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.hide();
-                    window_visible.store(false, Ordering::SeqCst);
-                }
-            }
-
-            Ok(())
+                Ok(())
             }
         })
         .on_window_event({

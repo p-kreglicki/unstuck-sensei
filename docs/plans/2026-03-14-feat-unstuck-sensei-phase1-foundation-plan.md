@@ -654,7 +654,7 @@ Build the app shell and enable auto-launch on login.
   - Add toggle in Settings (Phase 5) — for now, just enable it
   - Auto-launch with `--minimized` flag (configured in Rust plugin init)
 
-- [ ] Tray icon integration with auth state:
+- [x] Tray icon integration with auth state:
   - If user is not signed in: tray menu shows only "Sign In" and "Quit"
   - If user is signed in: tray menu shows "Start Session", "Pause Detection", separator, "Settings", "Quit"
   - Update tray menu on auth state change via Tauri command
@@ -711,7 +711,7 @@ Build the app shell and enable auto-launch on login.
 - [x] Protected routes redirect to login when not authenticated
 - [x] Layout shows nav with Session / History / Settings
 - [x] Auto-launch on login works with `--minimized` flag
-- [ ] Tray menu items update based on auth state
+- [x] Tray menu items update based on auth state
 - [ ] *(Stretch)* Magic link sends email and callback opens the app
 
 ### Security Requirements

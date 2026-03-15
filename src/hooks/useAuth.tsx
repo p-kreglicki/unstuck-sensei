@@ -1,4 +1,5 @@
 import { enable as enableAutostart } from "@tauri-apps/plugin-autostart";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   createContext,
   useContext,
@@ -69,6 +70,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
+    void invoke("update_tray_auth_state", {
+      signedIn: Boolean(session),
+    }).catch(() => {
+      // Tray sync is helpful for desktop UX but should not block auth flows.
+    });
+  }, [session]);
 
   async function maybeEnableAutostart() {
     try {
