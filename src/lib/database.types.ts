@@ -12,21 +12,21 @@ export type Database = {
       conversation_messages: {
         Row: {
           content: string;
-          created_at: string | null;
+          created_at: string;
           id: string;
           role: "user" | "assistant";
           session_id: string;
         };
         Insert: {
           content: string;
-          created_at?: string | null;
+          created_at?: string;
           id?: string;
           role: "user" | "assistant";
           session_id: string;
         };
         Update: {
           content?: string;
-          created_at?: string | null;
+          created_at?: string;
           id?: string;
           role?: "user" | "assistant";
           session_id?: string;
@@ -34,7 +34,7 @@ export type Database = {
       };
       profiles: {
         Row: {
-          created_at: string | null;
+          created_at: string;
           detection_enabled: boolean | null;
           detection_sensitivity: "low" | "medium" | "high" | null;
           display_name: string | null;
@@ -43,10 +43,10 @@ export type Database = {
           last_email_sent_at: string | null;
           preferred_time: string | null;
           timezone: string | null;
-          updated_at: string | null;
+          updated_at: string;
         };
         Insert: {
-          created_at?: string | null;
+          created_at?: string;
           detection_enabled?: boolean | null;
           detection_sensitivity?: "low" | "medium" | "high" | null;
           display_name?: string | null;
@@ -55,10 +55,10 @@ export type Database = {
           last_email_sent_at?: string | null;
           preferred_time?: string | null;
           timezone?: string | null;
-          updated_at?: string | null;
+          updated_at?: string;
         };
         Update: {
-          created_at?: string | null;
+          created_at?: string;
           detection_enabled?: boolean | null;
           detection_sensitivity?: "low" | "medium" | "high" | null;
           display_name?: string | null;
@@ -67,14 +67,14 @@ export type Database = {
           last_email_sent_at?: string | null;
           preferred_time?: string | null;
           timezone?: string | null;
-          updated_at?: string | null;
+          updated_at?: string;
         };
       };
       sessions: {
         Row: {
           clarifying_answer: string | null;
           clarifying_question: string | null;
-          created_at: string | null;
+          created_at: string;
           energy_level: "low" | "medium" | "high" | null;
           feedback: "yes" | "somewhat" | "no" | null;
           id: string;
@@ -86,12 +86,13 @@ export type Database = {
           timer_ended_at: string | null;
           timer_extended: boolean | null;
           timer_started_at: string | null;
+          updated_at: string;
           user_id: string;
         };
         Insert: {
           clarifying_answer?: string | null;
           clarifying_question?: string | null;
-          created_at?: string | null;
+          created_at?: string;
           energy_level?: "low" | "medium" | "high" | null;
           feedback?: "yes" | "somewhat" | "no" | null;
           id?: string;
@@ -103,12 +104,13 @@ export type Database = {
           timer_ended_at?: string | null;
           timer_extended?: boolean | null;
           timer_started_at?: string | null;
+          updated_at?: string;
           user_id: string;
         };
         Update: {
           clarifying_answer?: string | null;
           clarifying_question?: string | null;
-          created_at?: string | null;
+          created_at?: string;
           energy_level?: "low" | "medium" | "high" | null;
           feedback?: "yes" | "somewhat" | "no" | null;
           id?: string;
@@ -120,6 +122,7 @@ export type Database = {
           timer_ended_at?: string | null;
           timer_extended?: boolean | null;
           timer_started_at?: string | null;
+          updated_at?: string;
           user_id?: string;
         };
       };

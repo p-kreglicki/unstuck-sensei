@@ -3,15 +3,15 @@
 -- ============================================
 CREATE TABLE public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  display_name TEXT,
+  display_name TEXT CHECK (char_length(display_name) <= 100),
   preferred_time TIME DEFAULT '09:00:00',
   timezone TEXT DEFAULT 'America/New_York',
   email_enabled BOOLEAN DEFAULT TRUE,
   detection_sensitivity TEXT DEFAULT 'medium'
     CHECK (detection_sensitivity IN ('low', 'medium', 'high')),
   detection_enabled BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_email_sent_at DATE
 );
 
@@ -22,11 +22,21 @@ CREATE POLICY "Users can view own profile"
   TO authenticated
   USING (id = (SELECT auth.uid()));
 
+CREATE POLICY "Users can insert own profile"
+  ON public.profiles FOR INSERT
+  TO authenticated
+  WITH CHECK (id = (SELECT auth.uid()));
+
 CREATE POLICY "Users can update own profile"
   ON public.profiles FOR UPDATE
   TO authenticated
   USING (id = (SELECT auth.uid()))
   WITH CHECK (id = (SELECT auth.uid()));
+
+CREATE POLICY "Users can delete own profile"
+  ON public.profiles FOR DELETE
+  TO authenticated
+  USING (id = (SELECT auth.uid()));
 
 -- ============================================
 -- SESSIONS
@@ -38,7 +48,7 @@ CREATE TABLE public.sessions (
   energy_level TEXT CHECK (energy_level IN ('low', 'medium', 'high')),
   clarifying_question TEXT,
   clarifying_answer TEXT,
-  steps JSONB,
+  steps JSONB CHECK (steps IS NULL OR jsonb_typeof(steps) = 'array'),
   feedback TEXT CHECK (feedback IN ('yes', 'somewhat', 'no')),
   timer_started_at TIMESTAMPTZ,
   timer_ended_at TIMESTAMPTZ,
@@ -47,8 +57,9 @@ CREATE TABLE public.sessions (
     CHECK (status IN ('active', 'completed', 'incomplete')),
   source TEXT DEFAULT 'manual'
     CHECK (source IN ('detection', 'manual', 'email')),
-  timer_duration_seconds INTEGER,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  timer_duration_seconds INTEGER CHECK (timer_duration_seconds > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_sessions_user_id ON public.sessions USING btree (user_id);
@@ -71,6 +82,11 @@ CREATE POLICY "Users can update own sessions"
   USING (user_id = (SELECT auth.uid()))
   WITH CHECK (user_id = (SELECT auth.uid()));
 
+CREATE POLICY "Users can delete own sessions"
+  ON public.sessions FOR DELETE
+  TO authenticated
+  USING (user_id = (SELECT auth.uid()));
+
 -- ============================================
 -- CONVERSATION_MESSAGES
 -- ============================================
@@ -79,7 +95,7 @@ CREATE TABLE public.conversation_messages (
   session_id UUID NOT NULL REFERENCES public.sessions(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   content TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_conversation_messages_session_id
@@ -98,6 +114,13 @@ CREATE POLICY "Users can insert own messages"
   ON public.conversation_messages FOR INSERT
   TO authenticated
   WITH CHECK (session_id IN (
+    SELECT id FROM public.sessions WHERE user_id = (SELECT auth.uid())
+  ));
+
+CREATE POLICY "Users can delete own messages"
+  ON public.conversation_messages FOR DELETE
+  TO authenticated
+  USING (session_id IN (
     SELECT id FROM public.sessions WHERE user_id = (SELECT auth.uid())
   ));
 
@@ -120,17 +143,20 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC;
+
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_new_user();
 
 -- ============================================
--- UPDATED_AT TRIGGER FOR PROFILES
+-- UPDATED_AT TRIGGER FOR PROFILES AND SESSIONS
 -- ============================================
 CREATE OR REPLACE FUNCTION public.update_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = ''
 AS $$
 BEGIN
   NEW.updated_at = NOW();
@@ -140,5 +166,10 @@ $$;
 
 CREATE TRIGGER profiles_updated_at
   BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_updated_at();
+
+CREATE TRIGGER sessions_updated_at
+  BEFORE UPDATE ON public.sessions
   FOR EACH ROW
   EXECUTE FUNCTION public.update_updated_at();
