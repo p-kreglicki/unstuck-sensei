@@ -91,6 +91,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::sync_detection_config,
             commands::get_detection_status,
+            commands::get_detection_debug,
             commands::pause_detection,
             commands::resume_detection,
             commands::dismiss_nudge

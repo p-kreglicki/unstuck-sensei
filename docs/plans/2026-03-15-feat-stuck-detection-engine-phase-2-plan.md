@@ -363,7 +363,7 @@ The platform observer always runs. The state machine controls whether evaluation
 
 **Tasks:**
 
-- [ ] Add macOS-specific dependencies to `Cargo.toml`:
+- [x] Add macOS-specific dependencies to `Cargo.toml`:
   ```toml
   [target.'cfg(target_os = "macos")'.dependencies]
   objc2 = "0.6"
@@ -373,21 +373,21 @@ The platform observer always runs. The state machine controls whether evaluation
   core-foundation = "0.10"
   core-foundation-sys = "0.8"
   ```
-- [ ] Implement `platform.rs` — app-switch observer
+- [x] Implement `platform.rs` — app-switch observer
   - Subscribe to `NSWorkspace.didActivateApplicationNotification` during `setup()`
   - Push `Instant::now()` into the sliding window deque on each activation
   - Filter out system UI bundle IDs (Spotlight, Notification Center, etc.)
   - Extract `bundleIdentifier` for meeting suppression
   - Capture `AppHandle` clone in the notification block for state access
-- [ ] Implement `platform.rs` — idle time polling
+- [x] Implement `platform.rs` — idle time polling
   - Poll IOKit `HIDIdleTime` every 5 seconds via `tokio::time::interval`
   - Link IOKit framework
   - Read `HIDIdleTime` property (nanoseconds → seconds)
-- [ ] Implement `platform.rs` — sleep/wake handling
+- [x] Implement `platform.rs` — sleep/wake handling
   - Subscribe to `NSWorkspace.willSleepNotification` / `didWakeNotification`
   - Clear sliding window on wake
-- [ ] Start the platform observer unconditionally in `tauri::Builder::setup()` — evaluation is gated by the state machine, not observer startup
-- [ ] Add a temporary debug command `get_detection_debug` that returns current switch count and idle seconds for verification
+- [x] Start the platform observer unconditionally in `tauri::Builder::setup()` — evaluation is gated by the state machine, not observer startup
+- [x] Add a temporary debug command `get_detection_debug` that returns current switch count and idle seconds for verification
 
 **Success criteria**: Rapidly switching apps increments the switch count. Idle seconds report correctly. Sleep/wake clears the window.
 
