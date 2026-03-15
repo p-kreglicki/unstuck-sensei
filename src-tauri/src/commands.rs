@@ -7,6 +7,17 @@ use crate::{
     sync_tray_auth_state,
 };
 
+fn with_detection_state<T>(
+    state: &State<'_, Mutex<DetectionState>>,
+    handler: impl FnOnce(&mut DetectionState) -> T,
+) -> Result<T, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Detection state lock is poisoned.".to_string())?;
+
+    Ok(handler(&mut state))
+}
+
 #[tauri::command]
 pub fn sync_detection_config(
     app: AppHandle<Wry>,
@@ -18,12 +29,9 @@ pub fn sync_detection_config(
     let sensitivity = Sensitivity::from_input(&sensitivity)
         .ok_or_else(|| format!("Unsupported sensitivity: {sensitivity}"))?;
 
-    {
-        let mut state = state
-            .lock()
-            .map_err(|_| "Detection state lock is poisoned.".to_string())?;
+    with_detection_state(&state, |state| {
         state.sync_config(signed_in, enabled, sensitivity);
-    }
+    })?;
 
     sync_tray_auth_state(&app, signed_in)
 }
@@ -32,36 +40,26 @@ pub fn sync_detection_config(
 pub fn get_detection_status(
     state: State<'_, Mutex<DetectionState>>,
 ) -> Result<DetectionStatusResponse, String> {
-    let state = state
-        .lock()
-        .map_err(|_| "Detection state lock is poisoned.".to_string())?;
-
-    Ok(DetectionStatusResponse::from(&*state))
+    with_detection_state(&state, |state| DetectionStatusResponse::from(&*state))
 }
 
 #[tauri::command]
 pub fn pause_detection(state: State<'_, Mutex<DetectionState>>) -> Result<(), String> {
-    let mut state = state
-        .lock()
-        .map_err(|_| "Detection state lock is poisoned.".to_string())?;
-    state.pause();
-    Ok(())
+    with_detection_state(&state, |state| {
+        state.pause();
+    })
 }
 
 #[tauri::command]
 pub fn resume_detection(state: State<'_, Mutex<DetectionState>>) -> Result<(), String> {
-    let mut state = state
-        .lock()
-        .map_err(|_| "Detection state lock is poisoned.".to_string())?;
-    state.resume();
-    Ok(())
+    with_detection_state(&state, |state| {
+        state.resume();
+    })
 }
 
 #[tauri::command]
 pub fn dismiss_nudge(state: State<'_, Mutex<DetectionState>>) -> Result<(), String> {
-    let mut state = state
-        .lock()
-        .map_err(|_| "Detection state lock is poisoned.".to_string())?;
-    state.dismiss_nudge();
-    Ok(())
+    with_detection_state(&state, |state| {
+        state.dismiss_nudge();
+    })
 }
