@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useAuth } from "../hooks/useAuth";
 
@@ -8,7 +9,8 @@ const navItems = [
 ];
 
 export function Layout() {
-  const { user, signOut } = useAuth();
+  const { isLoading, user, signOut } = useAuth();
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   return (
     <div className="min-h-screen bg-transparent px-4 py-5 text-slate-100">
@@ -27,8 +29,14 @@ export function Layout() {
           </div>
           <button
             className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/30 hover:bg-white/5"
-            onClick={() => {
-              void signOut();
+            disabled={isLoading}
+            onClick={async () => {
+              setStatusMessage(null);
+              const { error } = await signOut();
+
+              if (error) {
+                setStatusMessage(error.message);
+              }
             }}
             type="button"
           >
@@ -62,6 +70,12 @@ export function Layout() {
             Phase 1
           </span>
         </div>
+
+        {statusMessage ? (
+          <p className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+            {statusMessage}
+          </p>
+        ) : null}
 
         <div className="mt-6 flex-1">
           <Outlet />

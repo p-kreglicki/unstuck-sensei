@@ -14,11 +14,15 @@ type AuthResult = {
   error: Error | null;
 };
 
+function toAuthError(error: unknown, fallbackMessage: string): Error {
+  return error instanceof Error ? error : new Error(fallbackMessage);
+}
+
 type AuthContextValue = {
   isLoading: boolean;
   session: Session | null;
   signIn(email: string, password: string): Promise<AuthResult>;
-  signOut(): Promise<void>;
+  signOut(): Promise<AuthResult>;
   signUp(email: string, password: string): Promise<AuthResult>;
   user: User | null;
 };
@@ -27,8 +31,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const user = session?.user ?? null;
 
   useEffect(() => {
     let active = true;
@@ -42,10 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         setSession(null);
-        setUser(null);
       } else {
         setSession(data.session);
-        setUser(data.session?.user ?? null);
       }
 
       setIsLoading(false);
@@ -61,7 +63,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setSession(nextSession);
-      setUser(nextSession?.user ?? null);
       setIsLoading(false);
     });
 
@@ -102,6 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       return { error };
+    } catch (error) {
+      return {
+        error: toAuthError(error, "Unable to sign in right now."),
+      };
     } finally {
       setIsLoading(false);
     }
@@ -126,16 +131,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       return { error };
+    } catch (error) {
+      return {
+        error: toAuthError(error, "Unable to sign up right now."),
+      };
     } finally {
       setIsLoading(false);
     }
   }
 
-  async function signOut(): Promise<void> {
+  async function signOut(): Promise<AuthResult> {
     setIsLoading(true);
 
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      return { error };
+    } catch (error) {
+      return {
+        error: toAuthError(error, "Unable to sign out right now."),
+      };
     } finally {
       setIsLoading(false);
     }
