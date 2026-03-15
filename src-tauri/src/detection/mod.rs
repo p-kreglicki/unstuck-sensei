@@ -104,31 +104,37 @@ impl DetectionState {
         } else {
             self.suppression_reasons
                 .insert(SuppressionReason::SignedOut);
-            self.app_switches.clear();
-            self.cooldown_remaining = None;
-            self.pause_remaining = None;
-            self.last_stuck_detected_at = None;
         }
 
-        self.status = if signed_in && enabled {
-            DetectionStatus::Active
-        } else {
-            DetectionStatus::Disabled
-        };
+        if !signed_in || !enabled {
+            self.disable();
+            return;
+        }
+
+        if self.status == DetectionStatus::Disabled {
+            self.status = DetectionStatus::Active;
+        }
     }
 
     pub fn pause(&mut self) {
-        self.status = DetectionStatus::Paused;
-        self.pause_remaining = Some(PAUSE_DURATION);
+        if matches!(
+            self.status,
+            DetectionStatus::Active | DetectionStatus::Cooldown | DetectionStatus::Suppressed
+        ) {
+            self.status = DetectionStatus::Paused;
+            self.pause_remaining = Some(PAUSE_DURATION);
+        }
     }
 
     pub fn resume(&mut self) {
-        self.pause_remaining = None;
-        self.status = if self.signed_in && self.enabled {
-            DetectionStatus::Active
-        } else {
-            DetectionStatus::Disabled
-        };
+        if self.status == DetectionStatus::Paused {
+            self.pause_remaining = None;
+            self.status = if self.signed_in && self.enabled {
+                DetectionStatus::Active
+            } else {
+                DetectionStatus::Disabled
+            };
+        }
     }
 
     pub fn dismiss_nudge(&mut self) {
@@ -141,6 +147,14 @@ impl DetectionState {
             DetectionStatus::Cooldown => self.cooldown_remaining.map(|duration| duration.as_secs()),
             _ => None,
         }
+    }
+
+    fn disable(&mut self) {
+        self.status = DetectionStatus::Disabled;
+        self.app_switches.clear();
+        self.cooldown_remaining = None;
+        self.pause_remaining = None;
+        self.last_stuck_detected_at = None;
     }
 }
 
@@ -159,5 +173,149 @@ impl From<&DetectionState> for DetectionStatusResponse {
             resume_in_seconds: state.resume_in_seconds(),
             nudge_active: state.last_stuck_detected_at.is_some(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn signed_in_state(status: DetectionStatus) -> DetectionState {
+        let mut state = DetectionState::new();
+        state.status = status;
+        state.signed_in = true;
+        state.enabled = true;
+        state
+            .suppression_reasons
+            .remove(&SuppressionReason::SignedOut);
+        state
+    }
+
+    #[test]
+    fn sync_config_preserves_runtime_states_when_reenabled() {
+        for status in [
+            DetectionStatus::Paused,
+            DetectionStatus::Cooldown,
+            DetectionStatus::Suppressed,
+            DetectionStatus::Notifying,
+        ] {
+            let mut state = signed_in_state(status);
+            state.pause_remaining = Some(Duration::from_secs(123));
+            state.cooldown_remaining = Some(Duration::from_secs(456));
+
+            state.sync_config(true, true, Sensitivity::High);
+
+            assert_eq!(state.status, status);
+            assert_eq!(state.sensitivity, Sensitivity::High);
+        }
+    }
+
+    #[test]
+    fn sync_config_activates_from_disabled_when_enabled() {
+        let mut state = DetectionState::new();
+
+        state.sync_config(true, true, Sensitivity::Low);
+
+        assert_eq!(state.status, DetectionStatus::Active);
+        assert_eq!(state.sensitivity, Sensitivity::Low);
+        assert!(!state
+            .suppression_reasons
+            .contains(&SuppressionReason::SignedOut));
+    }
+
+    #[test]
+    fn sync_config_disables_on_sign_out() {
+        let mut state = signed_in_state(DetectionStatus::Paused);
+        state.pause_remaining = Some(Duration::from_secs(99));
+        state.cooldown_remaining = Some(Duration::from_secs(88));
+        state.app_switches.push_back(Instant::now());
+        state.last_stuck_detected_at = Some(Instant::now());
+
+        state.sync_config(false, true, Sensitivity::Medium);
+
+        assert_eq!(state.status, DetectionStatus::Disabled);
+        assert!(state.app_switches.is_empty());
+        assert_eq!(state.pause_remaining, None);
+        assert_eq!(state.cooldown_remaining, None);
+        assert_eq!(state.last_stuck_detected_at, None);
+        assert!(state
+            .suppression_reasons
+            .contains(&SuppressionReason::SignedOut));
+    }
+
+    #[test]
+    fn sync_config_disables_when_detection_is_turned_off() {
+        let mut state = signed_in_state(DetectionStatus::Cooldown);
+        state.cooldown_remaining = Some(Duration::from_secs(88));
+        state.app_switches.push_back(Instant::now());
+        state.last_stuck_detected_at = Some(Instant::now());
+
+        state.sync_config(true, false, Sensitivity::Medium);
+
+        assert_eq!(state.status, DetectionStatus::Disabled);
+        assert!(state.app_switches.is_empty());
+        assert_eq!(state.pause_remaining, None);
+        assert_eq!(state.cooldown_remaining, None);
+        assert_eq!(state.last_stuck_detected_at, None);
+        assert!(!state
+            .suppression_reasons
+            .contains(&SuppressionReason::SignedOut));
+    }
+
+    #[test]
+    fn resume_only_transitions_from_paused() {
+        let mut paused = signed_in_state(DetectionStatus::Paused);
+        paused.pause_remaining = Some(Duration::from_secs(50));
+
+        paused.resume();
+
+        assert_eq!(paused.status, DetectionStatus::Active);
+        assert_eq!(paused.pause_remaining, None);
+
+        let mut cooldown = signed_in_state(DetectionStatus::Cooldown);
+        cooldown.cooldown_remaining = Some(Duration::from_secs(70));
+
+        cooldown.resume();
+
+        assert_eq!(cooldown.status, DetectionStatus::Cooldown);
+        assert_eq!(cooldown.cooldown_remaining, Some(Duration::from_secs(70)));
+    }
+
+    #[test]
+    fn pause_ignores_invalid_states_and_keeps_allowed_ones() {
+        let mut disabled = DetectionState::new();
+        disabled.pause();
+        assert_eq!(disabled.status, DetectionStatus::Disabled);
+        assert_eq!(disabled.pause_remaining, None);
+
+        let mut notifying = signed_in_state(DetectionStatus::Notifying);
+        notifying.pause();
+        assert_eq!(notifying.status, DetectionStatus::Notifying);
+        assert_eq!(notifying.pause_remaining, None);
+
+        for status in [
+            DetectionStatus::Active,
+            DetectionStatus::Cooldown,
+            DetectionStatus::Suppressed,
+        ] {
+            let mut state = signed_in_state(status);
+            state.pause();
+
+            assert_eq!(state.status, DetectionStatus::Paused);
+            assert_eq!(state.pause_remaining, Some(PAUSE_DURATION));
+        }
+    }
+
+    #[test]
+    fn dismiss_nudge_only_clears_nudge_state() {
+        let mut state = signed_in_state(DetectionStatus::Cooldown);
+        state.cooldown_remaining = Some(Duration::from_secs(30));
+        state.last_stuck_detected_at = Some(Instant::now());
+
+        state.dismiss_nudge();
+
+        assert_eq!(state.status, DetectionStatus::Cooldown);
+        assert_eq!(state.cooldown_remaining, Some(Duration::from_secs(30)));
+        assert_eq!(state.last_stuck_detected_at, None);
     }
 }
