@@ -1,12 +1,17 @@
 use std::sync::Mutex;
 
-use tauri::{AppHandle, State, Wry};
+use tauri::{plugin::PermissionState, AppHandle, State, Wry};
+use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_store::StoreExt;
 
 use crate::detection::DetectionDebugResponse;
 use crate::{
     detection::{execute_runtime_effects, DetectionState, DetectionStatusResponse, Sensitivity},
-    sync_tray_auth_state,
+    sync_tray_menu,
 };
+
+const APP_PREFERENCES_STORE: &str = "app-preferences.json";
+const NOTIFICATION_PERMISSION_ASKED_KEY: &str = "notificationPermissionAsked";
 
 fn with_detection_state<T>(
     state: &State<'_, Mutex<DetectionState>>,
@@ -35,7 +40,10 @@ pub fn sync_detection_config(
     })?;
 
     execute_runtime_effects(&app, effects)?;
-    sync_tray_auth_state(&app, signed_in)
+    sync_tray_menu(&app)?;
+    maybe_request_notification_permission(&app, signed_in);
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -86,4 +94,63 @@ pub fn dismiss_nudge(
 ) -> Result<(), String> {
     let effects = with_detection_state(&state, |state| state.dismiss_nudge())?;
     execute_runtime_effects(&app, effects)
+}
+
+fn maybe_request_notification_permission(app: &AppHandle<Wry>, signed_in: bool) {
+    if !signed_in {
+        return;
+    }
+
+    let store = match app.store(APP_PREFERENCES_STORE) {
+        Ok(store) => store,
+        Err(error) => {
+            log_nonblocking_error(&format!("failed to open app store: {error}"));
+            return;
+        }
+    };
+
+    if store
+        .get(NOTIFICATION_PERMISSION_ASKED_KEY)
+        .and_then(|value| value.as_bool())
+        == Some(true)
+    {
+        return;
+    }
+
+    let permission_state = match app.notification().permission_state() {
+        Ok(permission_state) => permission_state,
+        Err(error) => {
+            log_nonblocking_error(&format!(
+                "failed to read notification permission state: {error}"
+            ));
+            return;
+        }
+    };
+
+    if !matches!(
+        permission_state,
+        PermissionState::Prompt | PermissionState::PromptWithRationale
+    ) {
+        return;
+    }
+
+    let request_result = app.notification().request_permission();
+    store.set(NOTIFICATION_PERMISSION_ASKED_KEY, true);
+
+    if let Err(error) = store.save() {
+        log_nonblocking_error(&format!(
+            "failed to persist notification permission flag: {error}"
+        ));
+    }
+
+    if let Err(error) = request_result {
+        log_nonblocking_error(&format!(
+            "failed to request notification permission: {error}"
+        ));
+    }
+}
+
+fn log_nonblocking_error(message: &str) {
+    #[cfg(debug_assertions)]
+    eprintln!("[commands] {message}");
 }
