@@ -2,10 +2,9 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, State, Wry};
 
-#[cfg(debug_assertions)]
 use crate::detection::DetectionDebugResponse;
 use crate::{
-    detection::{DetectionState, DetectionStatusResponse, Sensitivity},
+    detection::{execute_runtime_effects, DetectionState, DetectionStatusResponse, Sensitivity},
     sync_tray_auth_state,
 };
 
@@ -31,10 +30,11 @@ pub fn sync_detection_config(
     let sensitivity = Sensitivity::from_input(&sensitivity)
         .ok_or_else(|| format!("Unsupported sensitivity: {sensitivity}"))?;
 
-    with_detection_state(&state, |state| {
-        state.sync_config(signed_in, enabled, sensitivity);
+    let effects = with_detection_state(&state, |state| {
+        state.sync_config(signed_in, enabled, sensitivity)
     })?;
 
+    execute_runtime_effects(&app, effects)?;
     sync_tray_auth_state(&app, signed_in)
 }
 
@@ -42,7 +42,7 @@ pub fn sync_detection_config(
 pub fn get_detection_status(
     state: State<'_, Mutex<DetectionState>>,
 ) -> Result<DetectionStatusResponse, String> {
-    with_detection_state(&state, |state| DetectionStatusResponse::from(&*state))
+    with_detection_state(&state, |state| state.status_response())
 }
 
 #[cfg(debug_assertions)]
@@ -53,23 +53,37 @@ pub fn get_detection_debug(
     with_detection_state(&state, |state| DetectionDebugResponse::from(&*state))
 }
 
+#[cfg(not(debug_assertions))]
 #[tauri::command]
-pub fn pause_detection(state: State<'_, Mutex<DetectionState>>) -> Result<(), String> {
-    with_detection_state(&state, |state| {
-        state.pause();
-    })
+pub fn get_detection_debug(
+    _state: State<'_, Mutex<DetectionState>>,
+) -> Result<DetectionDebugResponse, String> {
+    Err("Detection debug is not available in release builds.".to_string())
 }
 
 #[tauri::command]
-pub fn resume_detection(state: State<'_, Mutex<DetectionState>>) -> Result<(), String> {
-    with_detection_state(&state, |state| {
-        state.resume();
-    })
+pub fn pause_detection(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<DetectionState>>,
+) -> Result<(), String> {
+    let effects = with_detection_state(&state, |state| state.pause())?;
+    execute_runtime_effects(&app, effects)
 }
 
 #[tauri::command]
-pub fn dismiss_nudge(state: State<'_, Mutex<DetectionState>>) -> Result<(), String> {
-    with_detection_state(&state, |state| {
-        state.dismiss_nudge();
-    })
+pub fn resume_detection(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<DetectionState>>,
+) -> Result<(), String> {
+    let effects = with_detection_state(&state, |state| state.resume())?;
+    execute_runtime_effects(&app, effects)
+}
+
+#[tauri::command]
+pub fn dismiss_nudge(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<DetectionState>>,
+) -> Result<(), String> {
+    let effects = with_detection_state(&state, |state| state.dismiss_nudge())?;
+    execute_runtime_effects(&app, effects)
 }

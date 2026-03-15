@@ -86,20 +86,12 @@ fn toggle_main_window(app: &AppHandle<Wry>, window_visible: &AtomicBool) {
 pub fn run() {
     let window_visible = Arc::new(AtomicBool::new(true));
 
-    let app = tauri::Builder::default().manage(Mutex::new(detection::DetectionState::new()));
-    #[cfg(debug_assertions)]
-    let app = app.invoke_handler(tauri::generate_handler![
+    let app = tauri::Builder::default()
+        .manage(Mutex::new(detection::DetectionState::new()))
+        .invoke_handler(tauri::generate_handler![
         commands::sync_detection_config,
         commands::get_detection_status,
         commands::get_detection_debug,
-        commands::pause_detection,
-        commands::resume_detection,
-        commands::dismiss_nudge
-    ]);
-    #[cfg(not(debug_assertions))]
-    let app = app.invoke_handler(tauri::generate_handler![
-        commands::sync_detection_config,
-        commands::get_detection_status,
         commands::pause_detection,
         commands::resume_detection,
         commands::dismiss_nudge

@@ -397,21 +397,21 @@ The platform observer always runs. The state machine controls whether evaluation
 
 **Tasks:**
 
-- [ ] Implement evaluator in `detection/mod.rs` — called every 5 seconds alongside idle polling
+- [x] Implement evaluator in `detection/mod.rs` — called every 5 seconds alongside idle polling
   - Prune events older than 5 minutes from `VecDeque`
   - Count remaining events against sensitivity threshold
   - Check idle < 120 seconds
   - Return `ShouldNotify` or `NoAction`
-- [ ] Implement state machine in `detection/mod.rs` — pure transition function
+- [x] Implement state machine in `detection/mod.rs` — pure transition function
   - All state transitions as described in the state machine section
   - Return side effects: `SendNotification`, `StartCooldown`, `EmitStateChanged`
-- [ ] Send native notification when stuck detected:
+- [x] Send native notification when stuck detected:
   - Title: "Feeling stuck?"
   - Body: "Looks like you've been bouncing between apps. Want to talk it through?"
   - Set `last_stuck_detected_at` to `Some(Instant::now())`
-- [ ] Implement cooldown using `cooldown_remaining: Duration` — decrement by elapsed time each tick
-- [ ] Implement daily notification cap (max 6, reset at midnight)
-- [ ] Emit `detection-state-changed` event on every state transition (includes `nudge_active` flag)
+- [x] Implement cooldown using `cooldown_remaining: Duration` — decrement by elapsed time each tick
+- [x] Implement daily notification cap (max 6, reset at midnight)
+- [x] Emit `detection-state-changed` event on every state transition (includes `nudge_active` flag)
 
 **Success criteria**: Rapid app switching triggers a notification. A second notification does not fire within 30 minutes. State changes are emitted to the frontend.
 

@@ -41,7 +41,7 @@ use objc2_foundation::NSNotification;
 use tauri::{AppHandle, Manager, Wry};
 
 #[cfg(target_os = "macos")]
-use crate::detection::DetectionState;
+use crate::detection::{execute_runtime_effects, DetectionState};
 
 #[cfg(target_os = "macos")]
 const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -107,9 +107,13 @@ impl MacOsMonitor {
             let app = app.clone();
 
             move |_notification: NonNull<NSNotification>| {
-                with_detection_state(&app, |state| {
-                    state.clear_app_switches();
-                });
+                if let Some(effects) =
+                    with_detection_state(&app, |state| state.clear_app_switches())
+                {
+                    if let Err(error) = execute_runtime_effects(&app, effects) {
+                        error_log(&format!("failed to execute detection effects: {error}"));
+                    }
+                }
 
                 debug_log("cleared sliding window after wake");
             }
@@ -164,9 +168,13 @@ fn spawn_idle_polling(app: AppHandle<Wry>) {
             match read_idle_seconds() {
                 Ok(idle_seconds) => {
                     clear_idle_poll_error();
-                    with_detection_state(&app, |state| {
-                        state.update_idle_seconds(idle_seconds);
-                    });
+                    if let Some(effects) =
+                        with_detection_state(&app, |state| state.update_idle_seconds(idle_seconds))
+                    {
+                        if let Err(error) = execute_runtime_effects(&app, effects) {
+                            error_log(&format!("failed to execute detection effects: {error}"));
+                        }
+                    }
                 }
                 Err(error) => log_idle_poll_error(&error),
             }
@@ -186,9 +194,13 @@ fn handle_activation_notification(app: &AppHandle<Wry>, notification: &NSNotific
         return;
     }
 
-    with_detection_state(app, |state| {
-        state.record_app_switch(bundle_id.as_deref());
-    });
+    if let Some(effects) =
+        with_detection_state(app, |state| state.record_app_switch(bundle_id.as_deref()))
+    {
+        if let Err(error) = execute_runtime_effects(app, effects) {
+            error_log(&format!("failed to execute detection effects: {error}"));
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -203,15 +215,19 @@ fn extract_bundle_id(notification: &NSNotification) -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn with_detection_state<T>(app: &AppHandle<Wry>, handler: impl FnOnce(&mut DetectionState) -> T) {
+fn with_detection_state<T>(
+    app: &AppHandle<Wry>,
+    handler: impl FnOnce(&mut DetectionState) -> T,
+) -> Option<T> {
     let state = app.state::<Mutex<DetectionState>>();
     let lock = state.lock();
 
     match lock {
-        Ok(mut state) => {
-            handler(&mut state);
+        Ok(mut state) => Some(handler(&mut state)),
+        Err(_) => {
+            log_lock_poisoned();
+            None
         }
-        Err(_) => log_lock_poisoned(),
     }
 }
 

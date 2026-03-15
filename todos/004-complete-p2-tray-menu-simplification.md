@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "004"
 tags: [code-review, performance, typescript]
@@ -56,6 +56,7 @@ useEffect(() => {
 |------|--------|-----------|
 | 2026-03-15 | Created from code review of PR #1 | Simplicity + performance agents converged on this |
 | 2026-03-15 | Triage: rewrote todo — Option A (remove auth menu) conflicts with Phase 1 scope; narrowed to Option B only | Always check approved requirements before proposing removals |
+| 2026-03-15 | Validity check after PR #5: completed | `src/hooks/useAuth.tsx` now syncs detection/tray state from a `useEffect` keyed by `session?.user.id`, and `src-tauri/src/commands.rs` rebuilds the tray via `sync_detection_config`, so token refreshes no longer trigger tray rebuilds |
 
 ## Resources
 
