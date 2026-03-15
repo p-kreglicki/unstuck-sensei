@@ -291,34 +291,34 @@ Goal: the app launches, sits in the tray, the user can sign up and sign in, and 
 
 **Tasks:**
 
-- [ ] Initialize a Tauri v2 project with React + TypeScript frontend
-- [ ] Set up Tailwind CSS and client-side routing
-- [ ] Create `.env` and `.env.example`
+- [x] Initialize a Tauri v2 project with React + TypeScript frontend
+- [x] Set up Tailwind CSS and client-side routing
+- [x] Create `.env` and `.env.example`
   ```bash
   VITE_SUPABASE_URL=
   VITE_SUPABASE_PUBLISHABLE_KEY=
   VITE_VERCEL_API_URL=
   ```
-- [ ] Create the Supabase project and schema
+- [x] Create the Supabase project and schema
   - `profiles`
   - `sessions`
   - `conversation_messages`
   - row-level security policies
   - profile auto-creation trigger
-- [ ] Install `@supabase/supabase-js` and create `src/lib/supabase.ts`
-- [ ] Persist auth securely; do not store refresh tokens in plaintext app files
-- [ ] Build `src/pages/Login.tsx` for email/password sign-up and sign-in
+- [x] Install `@supabase/supabase-js` and create `src/lib/supabase.ts`
+- [x] Persist auth securely; do not store refresh tokens in plaintext app files
+- [x] Build `src/pages/Login.tsx` for email/password sign-up and sign-in
 - [ ] Register desktop deep links for future email entry points
-- [ ] Set up the tray icon and tray menu
+- [x] Set up the tray icon and tray menu
   - Start Session
   - Pause Detection
   - Settings
   - Quit
-- [ ] Hide the window to tray on close instead of quitting
-- [ ] Configure auto-launch on login
-- [ ] Build `src/components/Layout.tsx`
-- [ ] Generate TypeScript types from the Supabase schema
-- [ ] Create `CLAUDE.md` with project conventions
+- [x] Hide the window to tray on close instead of quitting
+- [x] Configure auto-launch on login
+- [x] Build `src/components/Layout.tsx`
+- [x] Generate TypeScript types from the Supabase schema
+- [x] Create `CLAUDE.md` with project conventions
 
 **Success criteria:** The user can sign up, sign in, open the app from the tray, and keep it running in the tray after closing the window.
 

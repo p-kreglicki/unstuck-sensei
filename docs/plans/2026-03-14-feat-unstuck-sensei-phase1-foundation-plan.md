@@ -213,7 +213,7 @@ Initialize the Tauri v2 project with all tooling.
   VITE_SUPABASE_URL=
   VITE_SUPABASE_PUBLISHABLE_KEY=
   ```
-- [ ] Verify `npm run tauri dev` launches successfully
+- [x] Verify `npm run tauri dev` launches successfully
 
 **Success criteria:** Tauri dev mode launches a window with React + Tailwind working.
 
@@ -314,9 +314,9 @@ Create the Supabase project and set up all tables with RLS.
 
 **Tasks:**
 
-- [ ] Create Supabase project in dashboard
-- [ ] Copy `SUPABASE_URL` and the publishable client key to `.env`
-- [ ] Run SQL migration to create tables:
+- [x] Create Supabase project in dashboard
+- [x] Copy `SUPABASE_URL` and the publishable client key to `.env`
+- [x] Run SQL migration to create tables:
 
 ```sql
 -- ============================================
@@ -496,7 +496,7 @@ CREATE TRIGGER profiles_updated_at
 - [x] `service_role` key NOT used anywhere in desktop app
 - [x] `TO authenticated` clause on all policies (blocks anon access)
 - [x] No reliance on `user_metadata` in RLS policies
-- [x] Email confirmation configured for production
+- [ ] Email confirmation configured for production
 
 **Success criteria:** All tables created with RLS. Trigger creates profile on signup. Auth settings configured.
 
@@ -549,11 +549,11 @@ Wire up the Supabase JS client with OS keychain storage.
     },
   });
   ```
-- [ ] Generate TypeScript types from Supabase:
+- [x] Generate TypeScript types from Supabase:
   ```bash
   npx supabase gen types typescript --project-id <project-id> > src/lib/database.types.ts
   ```
-- [ ] Verify: Supabase client initializes without errors in dev mode
+- [x] Verify: Supabase client initializes without errors in dev mode
 
 **Why `detectSessionInUrl: false`:** In a Tauri app, auth callbacks come via deep links (custom URL scheme), not browser URL changes. We handle the code exchange manually in the deep link handler.
 
