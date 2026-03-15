@@ -309,7 +309,7 @@ Scaffolding, auth, database, tray app running. Goal: a signed-in user sees the a
 - [ ] Create `.env` and `.env.example`:
   ```
   VITE_SUPABASE_URL=
-  VITE_SUPABASE_ANON_KEY=
+  VITE_SUPABASE_PUBLISHABLE_KEY=
   VITE_VERCEL_API_URL=   # URL of hosted proxy
   ```
 - [ ] Create Supabase project, set up database schema (same tables as web MVP + detection fields on profiles)

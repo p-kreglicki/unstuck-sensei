@@ -177,7 +177,7 @@ Project scaffolding, auth, database, and basic infrastructure. Goal: a deployed 
 - [ ] Create `.env.local` and `.env.example` with required variables:
   ```
   NEXT_PUBLIC_SUPABASE_URL=
-  NEXT_PUBLIC_SUPABASE_ANON_KEY=
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
   SUPABASE_SERVICE_ROLE_KEY=
   ANTHROPIC_API_KEY=
   RESEND_API_KEY=

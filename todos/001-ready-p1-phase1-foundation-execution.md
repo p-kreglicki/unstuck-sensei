@@ -91,4 +91,87 @@ Proceed with Option 1. Complete all local repository and scaffolding work first,
 
 **Learnings:**
 - The plan contains a few stale Tauri details that needed correction during execution: `tauri-plugin-secure-storage` publishes a `1.x` crate on crates.io, secure-storage capability names use `*-item` suffixes, and the bundle identifier should not end with `.app` on macOS.
-- External blockers are now narrowed to Supabase project creation, dashboard auth settings, type generation from a real project, and GUI-specific tray behavior verification.
+- External blockers are now narrowed to Supabase project creation, dashboard auth settings, production-oriented secure token storage validation, and auth-aware tray menu updates.
+
+### 2026-03-15 - Client-Side RLS Verification
+
+**By:** Codex
+
+**Actions:**
+- Added `scripts/verify-rls.mjs` to exercise RLS through the publishable client key rather than SQL Editor.
+- Ran the script against the live Supabase project using two temporary users created through Supabase Auth.
+- Verified these behaviors from the client path:
+  - anonymous client sees zero profile rows
+  - authenticated user can read their own profile
+  - authenticated user can insert their own session
+  - authenticated user cannot insert a session for another user
+  - second user cannot read the first user's session or conversation messages
+
+**Learnings:**
+- The current RLS policies and trigger setup are functioning correctly from the client path.
+- Two temporary auth users were created for verification and remain in the Supabase Auth dashboard until manually removed.
+
+### 2026-03-15 - Live Auth Verification
+
+**By:** Codex
+
+**Actions:**
+- Added `scripts/verify-auth.mjs` to exercise live signup, password signin, signout, session persistence, and session restoration against the configured Supabase project.
+- Verified the live auth path with the publishable key:
+  - sign up succeeded
+  - password sign in succeeded
+  - session was persisted into async storage
+  - a recreated client restored the session correctly
+  - sign out cleared the session
+- Launched `npm run tauri dev` successfully and confirmed the desktop runtime starts with the current environment configuration.
+
+**Learnings:**
+- Supabase auth itself is working correctly for the app’s current client configuration.
+- The desktop runtime launches cleanly, but true GUI-level verification of sign-in, sign-out, and restart persistence inside the Tauri window is still a manual follow-up because this environment cannot click through the native app UI.
+- One temporary auth user was created for this verification and remains in Supabase Auth until manually removed: `auth-1773569073457-dyipazon@example.com`.
+
+### 2026-03-15 - Tray and Dock Restore Verification
+
+**By:** Codex
+
+**Actions:**
+- Investigated the missing tray restore behavior against Tauri v2 docs and source rather than continuing with speculative patches.
+- Identified that the tray icon builder had no icon assigned, which prevented the macOS menu bar status item from appearing.
+- Added the tray icon using `app.default_window_icon()` and enabled template rendering on macOS.
+- Added explicit macOS `RunEvent::Reopen` handling so clicking the Dock icon restores the hidden window when no windows are visible.
+- Verified with the user that both the tray icon and Dock icon now restore the app window properly.
+
+**Learnings:**
+- On macOS, the Dock icon and the menu bar tray icon are separate surfaces; the Dock menu is not the Tauri tray menu.
+- Tauri exposes Dock reactivation through `RunEvent::Reopen`, and that path must be handled explicitly if the app hides its main window instead of closing it.
+
+### 2026-03-15 - Tray Quit Verification
+
+**By:** Codex
+
+**Actions:**
+- Had the user explicitly test the custom tray menu `Quit` path after tray icon creation and restore behavior were fixed.
+- Confirmed the app exits as intended from the tray menu, closing the final Phase 1 window-management verification gap.
+
+**Learnings:**
+- The Phase 1 tray/window management acceptance path is now fully verified end-to-end: close hides, tray click restores, Dock click restores, and tray `Quit` exits.
+
+### 2026-03-15 - Manual Auth and Minimized Launch Verification
+
+**By:** Codex
+
+**Actions:**
+- Had the user manually verify the native auth and shell flows in the running desktop app.
+- Confirmed:
+  - sign up works
+  - sign in works
+  - sign out works
+  - the signed-in shell renders the expected navigation
+  - session state persists correctly across restart
+  - signed-out state also persists correctly across restart
+- Clarified the correct Tauri CLI argument passing pattern for app args and had the user verify the `--minimized` startup path successfully.
+- Treated the signed-out restart path as sufficient verification that protected routes redirect back to login on app boot.
+
+**Learnings:**
+- The development session storage path is working correctly for the Phase 1 auth shell and restart flows.
+- The remaining open acceptance gaps are no longer around core auth or window behavior; they are around production storage guarantees and future auth-aware tray menu behavior.

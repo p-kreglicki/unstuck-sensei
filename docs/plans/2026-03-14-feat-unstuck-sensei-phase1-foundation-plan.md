@@ -211,7 +211,7 @@ Initialize the Tauri v2 project with all tooling.
 - [x] Create `.env.example`:
   ```
   VITE_SUPABASE_URL=
-  VITE_SUPABASE_ANON_KEY=
+  VITE_SUPABASE_PUBLISHABLE_KEY=
   ```
 - [ ] Verify `npm run tauri dev` launches successfully
 
@@ -302,7 +302,7 @@ Set up the system tray, window hide-to-tray, auto-launch, and deep link handling
     ]
   }
   ```
-- [ ] Verify: app launches to tray, window hides on close, "Quit" exits
+- [x] Verify: app launches to tray, window hides on close, "Quit" exits
 
 **Success criteria:** App sits in system tray. Closing window hides it. Tray menu works. Quit actually exits.
 
@@ -315,7 +315,7 @@ Create the Supabase project and set up all tables with RLS.
 **Tasks:**
 
 - [ ] Create Supabase project in dashboard
-- [ ] Copy `SUPABASE_URL` and `SUPABASE_ANON_KEY` to `.env`
+- [ ] Copy `SUPABASE_URL` and the publishable client key to `.env`
 - [ ] Run SQL migration to create tables:
 
 ```sql
@@ -483,7 +483,7 @@ CREATE TRIGGER profiles_updated_at
   - Enable email confirmation in Supabase Auth settings
   - Verify RLS policies with a second test account
 - [ ] Verify refresh token rotation: in Supabase dashboard > Auth > Settings, confirm "Refresh Token Rotation" is enabled. Test that using a refresh token invalidates the previous one.
-- [ ] Verify RLS by testing from the Supabase client (NOT SQL Editor — it bypasses RLS):
+- [x] Verify RLS by testing from the Supabase client (NOT SQL Editor — it bypasses RLS):
   - Unauthenticated request returns no data
   - Authenticated user can only see their own rows
   - Authenticated user cannot access another user's sessions
@@ -516,7 +516,7 @@ Wire up the Supabase JS client with OS keychain storage.
   import type { Database } from './database.types';
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
   // Custom storage adapter using OS keychain via tauri-plugin-secure-storage
   const secureStorage = {
@@ -539,7 +539,7 @@ Wire up the Supabase JS client with OS keychain storage.
     },
   };
 
-  export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  export const supabase = createClient<Database>(supabaseUrl, supabasePublishableKey, {
     auth: {
       flowType: 'pkce',
       autoRefreshToken: true,
@@ -699,41 +699,41 @@ Build the app shell and enable auto-launch on login.
 
 ### Functional Requirements
 
-- [ ] `npm run tauri dev` launches the app successfully
-- [ ] App appears in system tray with correct icon
-- [ ] Closing window hides to tray (does not quit)
-- [ ] "Quit" in tray menu exits the app
-- [ ] Left-clicking tray icon toggles window visibility
-- [ ] User can sign up with email + password
-- [ ] User can sign in with email + password
-- [ ] User stays signed in across app restarts (session persisted in keychain)
+- [x] `npm run tauri dev` launches the app successfully
+- [x] App appears in system tray with correct icon
+- [x] Closing window hides to tray (does not quit)
+- [x] "Quit" in tray menu exits the app
+- [x] Left-clicking tray icon toggles window visibility
+- [x] User can sign up with email + password
+- [x] User can sign in with email + password
+- [x] User stays signed in across app restarts
 - [ ] Auth tokens stored in OS keychain (not plaintext files)
-- [ ] Protected routes redirect to login when not authenticated
-- [ ] Layout shows nav with Session / History / Settings
-- [ ] Auto-launch on login works with `--minimized` flag
+- [x] Protected routes redirect to login when not authenticated
+- [x] Layout shows nav with Session / History / Settings
+- [x] Auto-launch on login works with `--minimized` flag
 - [ ] Tray menu items update based on auth state
 - [ ] *(Stretch)* Magic link sends email and callback opens the app
 
 ### Security Requirements
 
-- [ ] RLS enabled on `profiles`, `sessions`, and `conversation_messages`
-- [ ] All RLS policies use `(SELECT auth.uid())` wrapper
-- [ ] Policies scoped to `TO authenticated` (not public)
-- [ ] `user_id` columns indexed for RLS performance
+- [x] RLS enabled on `profiles`, `sessions`, and `conversation_messages`
+- [x] All RLS policies use `(SELECT auth.uid())` wrapper
+- [x] Policies scoped to `TO authenticated` (not public)
+- [x] `user_id` columns indexed for RLS performance
 - [x] `service_role` key NOT present anywhere in desktop app code or config
-- [x] `anon` key used for all client-side Supabase calls
+- [x] Publishable key used for all client-side Supabase calls
 - [x] PKCE flow used for OAuth/magic link (not implicit)
 - [ ] Email confirmation enabled in Supabase dashboard before production
 - [x] CSP configured in `tauri.conf.json` to restrict connections
-- [ ] `handle_new_user()` trigger uses `SECURITY DEFINER` + `SET search_path = ''`
+- [x] `handle_new_user()` trigger uses `SECURITY DEFINER` + `SET search_path = ''`
 
 ### Quality Gates
 
 - [x] App builds without warnings (`npm run tauri build`)
-- [ ] Auth tested: sign up → sign in → restart app → still signed in → sign out
-- [ ] RLS tested from client: user cannot access another user's data
+- [x] Auth tested: sign up → sign in → restart app → still signed in → sign out
+- [x] RLS tested from client: user cannot access another user's data
 - [ ] Tray menu tested: all items work correctly
-- [ ] Window management tested: close → hides, tray click → shows, Quit → exits
+- [x] Window management tested: close → hides, tray click → shows, Quit → exits
 - [ ] Deep link tested: `unstuck-sensei://auth/callback?code=...` handled correctly
 
 ## Risk Analysis

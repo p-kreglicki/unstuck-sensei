@@ -1,46 +1,105 @@
 import { createClient } from "@supabase/supabase-js";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { LazyStore } from "@tauri-apps/plugin-store";
 import type { Database } from "./database.types";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!supabaseUrl || !supabasePublishableKey) {
   console.warn(
-    "Supabase environment variables are missing. Auth flows will remain unavailable until VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are configured.",
+    "Supabase environment variables are missing. Auth flows will remain unavailable until VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY are configured.",
   );
 }
 
-const secureStorage = {
+type AuthStorage = {
+  getItem(key: string): Promise<string | null>;
+  removeItem(key: string): Promise<void>;
+  setItem(key: string, value: string): Promise<void>;
+};
+
+const secureStorage: AuthStorage = {
   async getItem(key: string): Promise<string | null> {
     try {
-      return await invoke<string>("plugin:secure-storage|get", { key });
+      const response = await invoke<{ data?: string | null }>(
+        "plugin:secure-storage|get_item",
+        {
+          payload: {
+            prefixedKey: key,
+          },
+        },
+      );
+
+      return response.data ?? null;
     } catch {
       return null;
     }
   },
   async removeItem(key: string): Promise<void> {
     try {
-      await invoke("plugin:secure-storage|delete", { key });
+      await invoke("plugin:secure-storage|remove_item", {
+        payload: {
+          prefixedKey: key,
+        },
+      });
     } catch {
       // Missing keys are safe to ignore.
     }
   },
   async setItem(key: string, value: string): Promise<void> {
-    await invoke("plugin:secure-storage|set", { key, value });
+    await invoke("plugin:secure-storage|set_item", {
+      payload: {
+        data: value,
+        prefixedKey: key,
+      },
+    });
   },
 };
 
+const devStore = new LazyStore("auth-session.json", {
+  autoSave: true,
+  defaults: {},
+});
+
+const tauriDevStorage: AuthStorage = {
+  async getItem(key: string): Promise<string | null> {
+    const value = await devStore.get<string>(key);
+    return typeof value === "string" ? value : null;
+  },
+  async removeItem(key: string): Promise<void> {
+    await devStore.delete(key);
+  },
+  async setItem(key: string, value: string): Promise<void> {
+    await devStore.set(key, value);
+  },
+};
+
+const browserStorage: AuthStorage = {
+  async getItem(key: string): Promise<string | null> {
+    return globalThis.localStorage?.getItem(key) ?? null;
+  },
+  async removeItem(key: string): Promise<void> {
+    globalThis.localStorage?.removeItem(key);
+  },
+  async setItem(key: string, value: string): Promise<void> {
+    globalThis.localStorage?.setItem(key, value);
+  },
+};
+
+// The desktop dev loop should not hit macOS Keychain on every auth bootstrap.
+const authStorage =
+  isTauri() ? (import.meta.env.DEV ? tauriDevStorage : secureStorage) : browserStorage;
+
 export const supabase = createClient<Database>(
   supabaseUrl ?? "https://placeholder.supabase.co",
-  supabaseAnonKey ?? "placeholder-anon-key",
+  supabasePublishableKey ?? "placeholder-publishable-key",
   {
     auth: {
       autoRefreshToken: true,
       detectSessionInUrl: false,
       flowType: "pkce",
       persistSession: true,
-      storage: secureStorage,
+      storage: authStorage,
     },
   },
 );
