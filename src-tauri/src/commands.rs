@@ -2,7 +2,6 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, State, Wry};
 
-#[cfg(debug_assertions)]
 use crate::detection::DetectionDebugResponse;
 use crate::{
     detection::{execute_runtime_effects, DetectionState, DetectionStatusResponse, Sensitivity},
@@ -52,6 +51,14 @@ pub fn get_detection_debug(
     state: State<'_, Mutex<DetectionState>>,
 ) -> Result<DetectionDebugResponse, String> {
     with_detection_state(&state, |state| DetectionDebugResponse::from(&*state))
+}
+
+#[cfg(not(debug_assertions))]
+#[tauri::command]
+pub fn get_detection_debug(
+    _state: State<'_, Mutex<DetectionState>>,
+) -> Result<DetectionDebugResponse, String> {
+    Err("Detection debug is not available in release builds.".to_string())
 }
 
 #[tauri::command]

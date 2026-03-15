@@ -659,7 +659,6 @@ impl From<&DetectionState> for DetectionStatusResponse {
     }
 }
 
-#[cfg(debug_assertions)]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectionDebugResponse {
