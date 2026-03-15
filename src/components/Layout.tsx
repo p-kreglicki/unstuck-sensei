@@ -1,3 +1,4 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useAuth } from "../hooks/useAuth";
@@ -7,6 +8,97 @@ const navItems = [
   { label: "History", to: "/history" },
   { label: "Settings", to: "/settings" },
 ];
+
+type DetectionStatus = {
+  nudgeActive: boolean;
+  resumeInSeconds: number | null;
+  status: "active" | "cooldown" | "disabled" | "notifying" | "paused" | "suppressed";
+};
+
+function DetectionDebugPanel() {
+  const [error, setError] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [result, setResult] = useState<DetectionStatus | null>(null);
+
+  async function runCommand(command: string) {
+    setError(null);
+    setIsRunning(true);
+
+    try {
+      if (command === "get_detection_status") {
+        const status = await invoke<DetectionStatus>("get_detection_status");
+        setResult(status);
+      } else {
+        await invoke(command);
+        const status = await invoke<DetectionStatus>("get_detection_status");
+        setResult(status);
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Command failed.");
+    } finally {
+      setIsRunning(false);
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-[28px] border border-amber-400/20 bg-amber-400/10 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-amber-200/80">Debug</p>
+          <h2 className="mt-2 text-lg font-semibold text-amber-50">Detection commands</h2>
+        </div>
+        <div className="rounded-full border border-amber-300/20 px-3 py-1 text-xs text-amber-100/80">
+          Dev only
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button
+          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isRunning}
+          onClick={() => void runCommand("get_detection_status")}
+          type="button"
+        >
+          Get status
+        </button>
+        <button
+          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isRunning}
+          onClick={() => void runCommand("pause_detection")}
+          type="button"
+        >
+          Pause
+        </button>
+        <button
+          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isRunning}
+          onClick={() => void runCommand("resume_detection")}
+          type="button"
+        >
+          Resume
+        </button>
+        <button
+          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isRunning}
+          onClick={() => void runCommand("dismiss_nudge")}
+          type="button"
+        >
+          Dismiss nudge
+        </button>
+      </div>
+
+      {error ? (
+        <p className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+          {error}
+        </p>
+      ) : null}
+
+      <pre className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-xs leading-6 text-slate-200">
+        {result ? JSON.stringify(result, null, 2) : "Run a command to inspect detection state."}
+      </pre>
+    </section>
+  );
+}
 
 export function Layout() {
   const { isLoading, user, signOut } = useAuth();
@@ -76,6 +168,8 @@ export function Layout() {
             {statusMessage}
           </p>
         ) : null}
+
+        {import.meta.env.DEV && isTauri() ? <DetectionDebugPanel /> : null}
 
         <div className="mt-6 flex-1">
           <Outlet />
