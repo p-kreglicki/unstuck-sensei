@@ -13,7 +13,7 @@ Build Unstuck Sensei as a Tauri v2 desktop app that helps solo founders notice w
 The MVP lives in the system tray, monitors high-level work patterns locally, nudges the user with native notifications when they look stuck, and opens a short AI coaching session that ends in a reliable 25-minute work timer. A thin hosted backend handles Claude proxying and the daily email cron.
 
 **Source documents:**
-- `C1_MVP_Scope_AI_Start_Coach.docx` - original product spec
+- original product spec (kept local)
 - `docs/brainstorms/2026-03-12-unstuck-sensei-mvp-brainstorm.md` - refined brainstorm with product decisions
 
 ## Problem Statement / Motivation
@@ -655,7 +655,7 @@ them identify what they were trying to do.
 
 ### Product Inputs
 - `docs/brainstorms/2026-03-12-unstuck-sensei-mvp-brainstorm.md`
-- `C1_MVP_Scope_AI_Start_Coach.docx`
+- original product spec (kept local)
 
 ### Key Documentation
 - Tauri v2 docs
