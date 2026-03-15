@@ -13,7 +13,7 @@ Build Unstuck Sensei as a Tauri v2 desktop app that helps solo founders notice w
 The MVP lives in the system tray, monitors high-level work patterns locally, nudges the user with native notifications when they look stuck, and opens a short AI coaching session that ends in a reliable 25-minute work timer. A thin hosted backend handles Claude proxying and the daily email cron.
 
 **Source documents:**
-- `C1_MVP_Scope_AI_Start_Coach.docx` - original product spec
+- original product spec (kept local)
 - `docs/brainstorms/2026-03-12-unstuck-sensei-mvp-brainstorm.md` - refined brainstorm with product decisions
 
 ## Problem Statement / Motivation
@@ -291,34 +291,34 @@ Goal: the app launches, sits in the tray, the user can sign up and sign in, and 
 
 **Tasks:**
 
-- [ ] Initialize a Tauri v2 project with React + TypeScript frontend
-- [ ] Set up Tailwind CSS and client-side routing
-- [ ] Create `.env` and `.env.example`
+- [x] Initialize a Tauri v2 project with React + TypeScript frontend
+- [x] Set up Tailwind CSS and client-side routing
+- [x] Create `.env` and `.env.example`
   ```bash
   VITE_SUPABASE_URL=
   VITE_SUPABASE_PUBLISHABLE_KEY=
   VITE_VERCEL_API_URL=
   ```
-- [ ] Create the Supabase project and schema
+- [x] Create the Supabase project and schema
   - `profiles`
   - `sessions`
   - `conversation_messages`
   - row-level security policies
   - profile auto-creation trigger
-- [ ] Install `@supabase/supabase-js` and create `src/lib/supabase.ts`
-- [ ] Persist auth securely; do not store refresh tokens in plaintext app files
-- [ ] Build `src/pages/Login.tsx` for email/password sign-up and sign-in
+- [x] Install `@supabase/supabase-js` and create `src/lib/supabase.ts`
+- [x] Persist auth securely; do not store refresh tokens in plaintext app files
+- [x] Build `src/pages/Login.tsx` for email/password sign-up and sign-in
 - [ ] Register desktop deep links for future email entry points
-- [ ] Set up the tray icon and tray menu
+- [x] Set up the tray icon and tray menu
   - Start Session
   - Pause Detection
   - Settings
   - Quit
-- [ ] Hide the window to tray on close instead of quitting
-- [ ] Configure auto-launch on login
-- [ ] Build `src/components/Layout.tsx`
-- [ ] Generate TypeScript types from the Supabase schema
-- [ ] Create `CLAUDE.md` with project conventions
+- [x] Hide the window to tray on close instead of quitting
+- [x] Configure auto-launch on login
+- [x] Build `src/components/Layout.tsx`
+- [x] Generate TypeScript types from the Supabase schema
+- [x] Create `CLAUDE.md` with project conventions
 
 **Success criteria:** The user can sign up, sign in, open the app from the tray, and keep it running in the tray after closing the window.
 
@@ -655,7 +655,7 @@ them identify what they were trying to do.
 
 ### Product Inputs
 - `docs/brainstorms/2026-03-12-unstuck-sensei-mvp-brainstorm.md`
-- `C1_MVP_Scope_AI_Start_Coach.docx`
+- original product spec (kept local)
 
 ### Key Documentation
 - Tauri v2 docs

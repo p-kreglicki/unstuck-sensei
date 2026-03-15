@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-12
 **Status:** Draft
-**Source:** C1_MVP_Scope_AI_Start_Coach.docx + brainstorming session
+**Source:** original product spec (kept local) + brainstorming session
 
 ---
 
