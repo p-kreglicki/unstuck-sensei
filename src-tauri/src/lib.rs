@@ -1,7 +1,10 @@
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
+
+mod commands;
+mod detection;
 
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
@@ -25,10 +28,9 @@ fn build_tray_menu<M: Manager<Wry>>(
     if signed_in {
         let start_session =
             MenuItemBuilder::with_id(MENU_START_SESSION, "Start Session").build(manager)?;
-        let pause_detection =
-            MenuItemBuilder::with_id(MENU_PAUSE_DETECTION, "Pause Detection")
-                .enabled(false)
-                .build(manager)?;
+        let pause_detection = MenuItemBuilder::with_id(MENU_PAUSE_DETECTION, "Pause Detection")
+            .enabled(false)
+            .build(manager)?;
         let settings = MenuItemBuilder::with_id(MENU_SETTINGS, "Settings").build(manager)?;
         let separator = PredefinedMenuItem::separator(manager)?;
 
@@ -48,12 +50,11 @@ fn build_tray_menu<M: Manager<Wry>>(
     }
 }
 
-#[tauri::command]
-fn update_tray_auth_state(app: AppHandle<Wry>, signed_in: bool) -> Result<(), String> {
+pub(crate) fn sync_tray_auth_state(app: &AppHandle<Wry>, signed_in: bool) -> Result<(), String> {
     let tray = app
         .tray_by_id(TRAY_ID)
         .ok_or_else(|| "Main tray icon not available.".to_string())?;
-    let menu = build_tray_menu(&app, signed_in).map_err(|error| error.to_string())?;
+    let menu = build_tray_menu(app, signed_in).map_err(|error| error.to_string())?;
 
     tray.set_menu(Some(menu)).map_err(|error| error.to_string())
 }
@@ -86,7 +87,14 @@ pub fn run() {
     let window_visible = Arc::new(AtomicBool::new(true));
 
     let app = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![update_tray_auth_state])
+        .manage(Mutex::new(detection::DetectionState::new()))
+        .invoke_handler(tauri::generate_handler![
+            commands::sync_detection_config,
+            commands::get_detection_status,
+            commands::pause_detection,
+            commands::resume_detection,
+            commands::dismiss_nudge
+        ])
         .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
@@ -94,6 +102,7 @@ pub fn run() {
                 .app_name("Unstuck Sensei")
                 .build(),
         )
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_secure_storage::init())
         .plugin(tauri_plugin_shell::init())
@@ -108,6 +117,8 @@ pub fn run() {
             let window_visible = Arc::clone(&window_visible);
 
             move |app| {
+                detection::platform::setup(&app.handle());
+
                 let tray_menu = build_tray_menu(app, false)?;
 
                 let mut tray_builder = TrayIconBuilder::with_id(TRAY_ID)
