@@ -22,6 +22,12 @@ const DAILY_NOTIFICATION_CAP: u32 = 6;
 const NOTIFICATION_TITLE: &str = "Feeling stuck?";
 const NOTIFICATION_BODY: &str =
     "Looks like you've been bouncing between apps. Want to talk it through?";
+const MEETING_APP_BUNDLE_IDS: &[&str] = &[
+    "us.zoom.xos",
+    "com.microsoft.teams2",
+    "com.apple.FaceTime",
+    "com.webex.meetingmanager",
+];
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -84,6 +90,7 @@ pub struct DetectionState {
     pub enabled: bool,
     pub signed_in: bool,
     pub app_switches: VecDeque<Instant>,
+    pub app_foregrounded: bool,
     pub last_foreground_bundle_id: Option<String>,
     pub last_idle_seconds: u64,
     pub cooldown_remaining: Option<Duration>,
@@ -147,6 +154,7 @@ impl DetectionState {
             enabled: false,
             signed_in: false,
             app_switches: VecDeque::new(),
+            app_foregrounded: false,
             last_foreground_bundle_id: None,
             last_idle_seconds: 0,
             cooldown_remaining: None,
@@ -185,6 +193,10 @@ impl DetectionState {
         self.record_app_switch_at(bundle_id, Instant::now())
     }
 
+    pub fn set_app_foregrounded(&mut self, app_foregrounded: bool) -> Vec<DetectionRuntimeEffect> {
+        self.set_app_foregrounded_at(app_foregrounded, Instant::now())
+    }
+
     pub fn update_idle_seconds(&mut self, idle_seconds: u64) -> Vec<DetectionRuntimeEffect> {
         self.update_idle_seconds_at(idle_seconds, Instant::now(), Local::now().date_naive())
     }
@@ -221,6 +233,8 @@ impl DetectionState {
             self.suppression_reasons
                 .insert(SuppressionReason::SignedOut);
         }
+
+        self.refresh_dynamic_suppression_reasons();
 
         if !signed_in || !enabled {
             return self.disable(now);
@@ -295,14 +309,27 @@ impl DetectionState {
         now: Instant,
     ) -> Vec<DetectionRuntimeEffect> {
         self.last_foreground_bundle_id = bundle_id.map(ToOwned::to_owned);
+        self.refresh_dynamic_suppression_reasons();
+
+        let effects = self.refresh_suppression_state(now);
 
         if !(self.signed_in && self.enabled) {
-            return Vec::new();
+            return effects;
         }
 
         self.prune_app_switches(now);
         self.app_switches.push_back(now);
-        Vec::new()
+        effects
+    }
+
+    fn set_app_foregrounded_at(
+        &mut self,
+        app_foregrounded: bool,
+        now: Instant,
+    ) -> Vec<DetectionRuntimeEffect> {
+        self.app_foregrounded = app_foregrounded;
+        self.refresh_dynamic_suppression_reasons();
+        self.refresh_suppression_state(now)
     }
 
     fn update_idle_seconds_at(
@@ -500,6 +527,24 @@ impl DetectionState {
         }
     }
 
+    fn refresh_dynamic_suppression_reasons(&mut self) {
+        self.set_suppression_reason(
+            SuppressionReason::MeetingApp,
+            self.last_foreground_bundle_id
+                .as_deref()
+                .is_some_and(is_meeting_app_bundle_id),
+        );
+        self.set_suppression_reason(SuppressionReason::AppForegrounded, self.app_foregrounded);
+    }
+
+    fn set_suppression_reason(&mut self, reason: SuppressionReason, active: bool) {
+        if active {
+            self.suppression_reasons.insert(reason);
+        } else {
+            self.suppression_reasons.remove(&reason);
+        }
+    }
+
     fn has_runtime_suppression(&self) -> bool {
         self.suppression_reasons
             .iter()
@@ -531,7 +576,6 @@ impl DetectionState {
         self.status = result.next_status;
 
         self.app_switches.clear();
-        self.last_foreground_bundle_id = None;
         self.cooldown_remaining = None;
         self.notification_remaining = None;
         self.pause_remaining = None;
@@ -551,6 +595,10 @@ impl DetectionState {
 
         effects
     }
+}
+
+fn is_meeting_app_bundle_id(bundle_id: &str) -> bool {
+    MEETING_APP_BUNDLE_IDS.contains(&bundle_id)
 }
 
 fn transition(status: DetectionStatus, event: TransitionEvent) -> TransitionResult {
@@ -723,6 +771,7 @@ mod tests {
             state.cooldown_remaining = Some(Duration::from_secs(456));
             state.notification_remaining = Some(Duration::from_secs(12));
             if status == DetectionStatus::Suppressed {
+                state.last_foreground_bundle_id = Some("us.zoom.xos".to_string());
                 state
                     .suppression_reasons
                     .insert(SuppressionReason::MeetingApp);
@@ -944,6 +993,60 @@ mod tests {
         assert_eq!(state.app_switch_count(), 4);
         assert!(effects.is_empty());
         assert_eq!(state.status, DetectionStatus::Active);
+    }
+
+    #[test]
+    fn meeting_app_switch_toggles_runtime_suppression() {
+        let now = Instant::now();
+        let mut state = signed_in_state(DetectionStatus::Active);
+
+        let effects = state.record_app_switch_at(Some("us.zoom.xos"), now);
+
+        assert_eq!(state.status, DetectionStatus::Suppressed);
+        assert!(state
+            .suppression_reasons
+            .contains(&SuppressionReason::MeetingApp));
+        assert_state_changed(&effects, DetectionStatus::Suppressed, false);
+
+        let effects = state.record_app_switch_at(Some("com.apple.TextEdit"), now);
+
+        assert_eq!(state.status, DetectionStatus::Active);
+        assert!(!state
+            .suppression_reasons
+            .contains(&SuppressionReason::MeetingApp));
+        assert_state_changed(&effects, DetectionStatus::Active, false);
+    }
+
+    #[test]
+    fn app_foreground_suppression_applies_immediately_and_survives_reenable() {
+        let now = Instant::now();
+        let mut state = signed_in_state(DetectionStatus::Active);
+
+        let effects = state.set_app_foregrounded_at(true, now);
+
+        assert_eq!(state.status, DetectionStatus::Suppressed);
+        assert!(state
+            .suppression_reasons
+            .contains(&SuppressionReason::AppForegrounded));
+        assert_state_changed(&effects, DetectionStatus::Suppressed, false);
+
+        let effects = state.sync_config_at(true, false, Sensitivity::Medium, now);
+        assert_eq!(state.status, DetectionStatus::Disabled);
+        assert_state_changed(&effects, DetectionStatus::Disabled, false);
+
+        let effects = state.sync_config_at(true, true, Sensitivity::Medium, now);
+        assert_eq!(state.status, DetectionStatus::Suppressed);
+        assert!(state
+            .suppression_reasons
+            .contains(&SuppressionReason::AppForegrounded));
+        assert_state_changed(&effects, DetectionStatus::Suppressed, false);
+
+        let effects = state.set_app_foregrounded_at(false, now);
+        assert_eq!(state.status, DetectionStatus::Active);
+        assert!(!state
+            .suppression_reasons
+            .contains(&SuppressionReason::AppForegrounded));
+        assert_state_changed(&effects, DetectionStatus::Active, false);
     }
 
     #[test]

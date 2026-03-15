@@ -421,18 +421,19 @@ The platform observer always runs. The state machine controls whether evaluation
 
 **Tasks:**
 
-- [ ] Implement suppression in `detection/mod.rs` — meeting app detection
+- [x] Implement suppression in `detection/mod.rs` — meeting app detection
   - Match `bundleIdentifier` against known meeting app IDs
   - Set/clear `SuppressionReason::MeetingApp` on app-switch events
-- [ ] Suppress when main window is visible (app is foregrounded)
+- [x] Suppress when main window is visible (app is foregrounded)
   - Use existing `window_visible: Arc<AtomicBool>` to set/clear `SuppressionReason::AppForegrounded`
-- [ ] Implement manual pause from tray menu
+- [x] Implement manual pause from tray menu
   - Handle `MENU_PAUSE_DETECTION` click: transition to Paused, set `pause_remaining` to 2 hours
   - Toggle menu label: "Pause Detection" ↔ "Resume Detection"
-- [ ] Verify sign-out stops detection via `sync_detection_config({ signedIn: false, ... })`
-- [ ] Request notification permission on first sign-in
+- [x] Verify sign-out stops detection via `sync_detection_config({ signedIn: false, ... })`
+- [x] Request notification permission on first sign-in
   - Check `permission_state()`, request if `Unknown`
   - Store "asked" flag in `tauri-plugin-store`
+  - Note: `tauri-plugin-notification` 2.3.3 currently reports desktop permissions via Tauri `PermissionState`, so this is implemented as a guarded once-only hook rather than a verified macOS-specific prompt flow.
 
 **Success criteria**: Zoom in foreground suppresses detection. Manual pause works with tray label toggle. Sign-out stops detection. Notification permission is requested once.
 
@@ -467,13 +468,13 @@ The platform observer always runs. The state machine controls whether evaluation
 - [ ] Opening the app after a detection shows a dismissible nudge banner (not auto-routing)
 - [ ] 30-minute cooldown after notification (both dismissal and auto-expiry enter cooldown)
 - [ ] Maximum 6 notifications per calendar day
-- [ ] Detection suppressed during native meeting apps (Zoom, Teams, FaceTime, WebEx)
-- [ ] Detection suppressed when app main window is visible
-- [ ] Manual pause from tray menu with 2-hour auto-resume
-- [ ] Tray menu label toggles between "Pause Detection" and "Resume Detection"
+- [x] Detection suppressed during native meeting apps (Zoom, Teams, FaceTime, WebEx)
+- [x] Detection suppressed when app main window is visible
+- [x] Manual pause from tray menu with 2-hour auto-resume
+- [x] Tray menu label toggles between "Pause Detection" and "Resume Detection"
 - [ ] `sync_detection_config` command accepts enabled, sensitivity, and signedIn from frontend
 - [ ] Sensitivity and enabled changes take effect immediately when pushed via `sync_detection_config`
-- [ ] Detection stops on sign-out, resumes on sign-in (both via `sync_detection_config`)
+- [x] Detection stops on sign-out, resumes on sign-in (both via `sync_detection_config`)
 - [ ] Sliding window clears on machine wake
 - [ ] Cooldown and pause timers do not count sleep time (Duration-based, tick-decremented)
 - [ ] Notification permission requested on first sign-in with explanation
@@ -491,7 +492,7 @@ The platform observer always runs. The state machine controls whether evaluation
 - [ ] State machine transitions tested with unit tests for all valid paths
 - [ ] Evaluator tested across all three sensitivity levels
 - [ ] Cooldown and pause duration decrement tested (including zero-crossing)
-- [ ] Suppression tested: meeting app, manual pause, app foregrounded, signed out
+- [x] Suppression tested: meeting app, manual pause, app foregrounded, signed out
 - [ ] Sliding window correctly prunes stale events
 - [ ] Daily notification cap tested
 - [ ] Sleep/wake correctly resets sliding window
