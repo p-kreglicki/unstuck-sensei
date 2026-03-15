@@ -133,8 +133,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           enabled,
           sensitivity,
         });
-      } catch {
+      } catch (error) {
         // Detection sync is helpful for desktop UX but should not block auth flows.
+        if (import.meta.env.DEV) {
+          console.warn("[detection] sync failed:", error);
+        }
       }
     }
 
