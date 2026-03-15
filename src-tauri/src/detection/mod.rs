@@ -155,6 +155,8 @@ impl DetectionState {
         self.cooldown_remaining = None;
         self.pause_remaining = None;
         self.last_stuck_detected_at = None;
+        self.suppression_reasons
+            .retain(|reason| *reason == SuppressionReason::SignedOut);
     }
 }
 
@@ -249,6 +251,10 @@ mod tests {
         state.cooldown_remaining = Some(Duration::from_secs(88));
         state.app_switches.push_back(Instant::now());
         state.last_stuck_detected_at = Some(Instant::now());
+        state.suppression_reasons.extend([
+            SuppressionReason::MeetingApp,
+            SuppressionReason::AppForegrounded,
+        ]);
 
         state.sync_config(true, false, Sensitivity::Medium);
 
@@ -257,9 +263,28 @@ mod tests {
         assert_eq!(state.pause_remaining, None);
         assert_eq!(state.cooldown_remaining, None);
         assert_eq!(state.last_stuck_detected_at, None);
+        assert!(state.suppression_reasons.is_empty());
         assert!(!state
             .suppression_reasons
             .contains(&SuppressionReason::SignedOut));
+    }
+
+    #[test]
+    fn sync_config_sign_out_keeps_only_signed_out_suppression() {
+        let mut state = signed_in_state(DetectionStatus::Suppressed);
+        state.suppression_reasons.extend([
+            SuppressionReason::MeetingApp,
+            SuppressionReason::TimerRunning,
+            SuppressionReason::AppForegrounded,
+        ]);
+
+        state.sync_config(false, true, Sensitivity::Medium);
+
+        assert_eq!(state.status, DetectionStatus::Disabled);
+        assert_eq!(
+            state.suppression_reasons,
+            HashSet::from([SuppressionReason::SignedOut])
+        );
     }
 
     #[test]
