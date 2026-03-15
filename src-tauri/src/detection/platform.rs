@@ -41,7 +41,7 @@ use objc2_foundation::NSNotification;
 use tauri::{AppHandle, Manager, Wry};
 
 #[cfg(target_os = "macos")]
-use crate::detection::{execute_runtime_effects, DetectionState};
+use crate::{detection::DetectionState, execute_detection_effects};
 
 #[cfg(target_os = "macos")]
 const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -110,7 +110,7 @@ impl MacOsMonitor {
                 if let Some(effects) =
                     with_detection_state(&app, |state| state.clear_app_switches())
                 {
-                    if let Err(error) = execute_runtime_effects(&app, effects) {
+                    if let Err(error) = execute_detection_effects(&app, effects, false) {
                         error_log(&format!("failed to execute detection effects: {error}"));
                     }
                 }
@@ -171,7 +171,7 @@ fn spawn_idle_polling(app: AppHandle<Wry>) {
                     if let Some(effects) =
                         with_detection_state(&app, |state| state.update_idle_seconds(idle_seconds))
                     {
-                        if let Err(error) = execute_runtime_effects(&app, effects) {
+                        if let Err(error) = execute_detection_effects(&app, effects, false) {
                             error_log(&format!("failed to execute detection effects: {error}"));
                         }
                     }
@@ -197,7 +197,7 @@ fn handle_activation_notification(app: &AppHandle<Wry>, notification: &NSNotific
     if let Some(effects) =
         with_detection_state(app, |state| state.record_app_switch(bundle_id.as_deref()))
     {
-        if let Err(error) = execute_runtime_effects(app, effects) {
+        if let Err(error) = execute_detection_effects(app, effects, false) {
             error_log(&format!("failed to execute detection effects: {error}"));
         }
     }

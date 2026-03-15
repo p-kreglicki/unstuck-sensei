@@ -12,7 +12,9 @@ use tauri::{
     AppHandle, Manager, RunEvent, WindowEvent, Wry,
 };
 
-use crate::detection::{execute_runtime_effects, DetectionState, DetectionStatus};
+use crate::detection::{
+    execute_runtime_effects, DetectionRuntimeEffect, DetectionState, DetectionStatus,
+};
 
 const TRAY_ID: &str = "main";
 const MENU_SIGN_IN: &str = "sign-in";
@@ -78,6 +80,25 @@ pub(crate) fn sync_tray_menu(app: &AppHandle<Wry>) -> Result<(), String> {
     tray.set_menu(Some(menu)).map_err(|error| error.to_string())
 }
 
+pub(crate) fn execute_detection_effects(
+    app: &AppHandle<Wry>,
+    effects: Vec<DetectionRuntimeEffect>,
+    force_tray_sync: bool,
+) -> Result<(), String> {
+    let should_sync_tray = force_tray_sync
+        || effects
+            .iter()
+            .any(|effect| matches!(effect, DetectionRuntimeEffect::EmitStateChanged(_)));
+
+    execute_runtime_effects(app, effects)?;
+
+    if should_sync_tray {
+        sync_tray_menu(app)?;
+    }
+
+    Ok(())
+}
+
 fn show_main_window(app: &AppHandle<Wry>, window_visible: &AtomicBool) {
     #[cfg(target_os = "macos")]
     let _ = app.show();
@@ -113,7 +134,7 @@ fn sync_detection_window_visibility(app: &AppHandle<Wry>, visible: bool) {
         }
     };
 
-    if let Err(error) = execute_runtime_effects(app, effects) {
+    if let Err(error) = execute_detection_effects(app, effects, false) {
         eprintln!("[tray] failed to execute detection effects: {error}");
     }
 }
@@ -131,7 +152,7 @@ fn toggle_detection_pause(app: &AppHandle<Wry>) -> Result<(), String> {
         }
     };
 
-    execute_runtime_effects(app, effects)
+    execute_detection_effects(app, effects, false)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

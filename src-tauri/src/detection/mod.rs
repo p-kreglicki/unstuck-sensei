@@ -10,8 +10,6 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Wry};
 use tauri_plugin_notification::NotificationExt;
 
-use crate::sync_tray_menu;
-
 pub const DETECTION_STATE_CHANGED_EVENT: &str = "detection-state-changed";
 
 const WINDOW_DURATION: Duration = Duration::from_secs(5 * 60);
@@ -688,8 +686,7 @@ pub fn execute_runtime_effects(
                 .map_err(|error| error.to_string())?,
             DetectionRuntimeEffect::EmitStateChanged(payload) => app
                 .emit(DETECTION_STATE_CHANGED_EVENT, payload)
-                .map_err(|error| error.to_string())
-                .and_then(|_| sync_tray_menu(app))?,
+                .map_err(|error| error.to_string())?,
         }
     }
 

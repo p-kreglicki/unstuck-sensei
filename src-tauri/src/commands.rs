@@ -6,8 +6,8 @@ use tauri_plugin_store::StoreExt;
 
 use crate::detection::DetectionDebugResponse;
 use crate::{
-    detection::{execute_runtime_effects, DetectionState, DetectionStatusResponse, Sensitivity},
-    sync_tray_menu,
+    detection::{DetectionState, DetectionStatusResponse, Sensitivity},
+    execute_detection_effects,
 };
 
 const APP_PREFERENCES_STORE: &str = "app-preferences.json";
@@ -39,8 +39,7 @@ pub fn sync_detection_config(
         state.sync_config(signed_in, enabled, sensitivity)
     })?;
 
-    execute_runtime_effects(&app, effects)?;
-    sync_tray_menu(&app)?;
+    execute_detection_effects(&app, effects, true)?;
     maybe_request_notification_permission(&app, signed_in);
 
     Ok(())
@@ -75,7 +74,7 @@ pub fn pause_detection(
     state: State<'_, Mutex<DetectionState>>,
 ) -> Result<(), String> {
     let effects = with_detection_state(&state, |state| state.pause())?;
-    execute_runtime_effects(&app, effects)
+    execute_detection_effects(&app, effects, false)
 }
 
 #[tauri::command]
@@ -84,7 +83,7 @@ pub fn resume_detection(
     state: State<'_, Mutex<DetectionState>>,
 ) -> Result<(), String> {
     let effects = with_detection_state(&state, |state| state.resume())?;
-    execute_runtime_effects(&app, effects)
+    execute_detection_effects(&app, effects, false)
 }
 
 #[tauri::command]
@@ -93,7 +92,7 @@ pub fn dismiss_nudge(
     state: State<'_, Mutex<DetectionState>>,
 ) -> Result<(), String> {
     let effects = with_detection_state(&state, |state| state.dismiss_nudge())?;
-    execute_runtime_effects(&app, effects)
+    execute_detection_effects(&app, effects, false)
 }
 
 fn maybe_request_notification_permission(app: &AppHandle<Wry>, signed_in: bool) {
@@ -135,17 +134,19 @@ fn maybe_request_notification_permission(app: &AppHandle<Wry>, signed_in: bool) 
     }
 
     let request_result = app.notification().request_permission();
+
+    if let Err(error) = request_result {
+        log_nonblocking_error(&format!(
+            "failed to request notification permission: {error}"
+        ));
+        return;
+    }
+
     store.set(NOTIFICATION_PERMISSION_ASKED_KEY, true);
 
     if let Err(error) = store.save() {
         log_nonblocking_error(&format!(
             "failed to persist notification permission flag: {error}"
-        ));
-    }
-
-    if let Err(error) = request_result {
-        log_nonblocking_error(&format!(
-            "failed to request notification permission: {error}"
         ));
     }
 }
