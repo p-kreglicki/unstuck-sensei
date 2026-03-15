@@ -2,6 +2,8 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, State, Wry};
 
+#[cfg(debug_assertions)]
+use crate::detection::DetectionDebugResponse;
 use crate::{
     detection::{DetectionState, DetectionStatusResponse, Sensitivity},
     sync_tray_auth_state,
@@ -41,6 +43,14 @@ pub fn get_detection_status(
     state: State<'_, Mutex<DetectionState>>,
 ) -> Result<DetectionStatusResponse, String> {
     with_detection_state(&state, |state| DetectionStatusResponse::from(&*state))
+}
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub fn get_detection_debug(
+    state: State<'_, Mutex<DetectionState>>,
+) -> Result<DetectionDebugResponse, String> {
+    with_detection_state(&state, |state| DetectionDebugResponse::from(&*state))
 }
 
 #[tauri::command]

@@ -63,6 +63,7 @@ pub struct DetectionState {
     pub enabled: bool,
     pub signed_in: bool,
     pub app_switches: VecDeque<Instant>,
+    pub last_foreground_bundle_id: Option<String>,
     pub last_idle_seconds: u64,
     pub cooldown_remaining: Option<Duration>,
     pub pause_remaining: Option<Duration>,
@@ -81,6 +82,7 @@ impl DetectionState {
             enabled: false,
             signed_in: false,
             app_switches: VecDeque::new(),
+            last_foreground_bundle_id: None,
             last_idle_seconds: 0,
             cooldown_remaining: None,
             pause_remaining: None,
@@ -141,6 +143,31 @@ impl DetectionState {
         self.last_stuck_detected_at = None;
     }
 
+    pub fn record_app_switch(&mut self, bundle_id: Option<&str>) {
+        self.last_foreground_bundle_id = bundle_id.map(ToOwned::to_owned);
+
+        if !(self.signed_in && self.enabled) {
+            return;
+        }
+
+        self.app_switches.push_back(Instant::now());
+    }
+
+    pub fn update_idle_seconds(&mut self, idle_seconds: u64) {
+        self.last_idle_seconds = idle_seconds;
+        self.last_tick = Instant::now();
+    }
+
+    pub fn clear_app_switches(&mut self) {
+        self.app_switches.clear();
+        self.last_tick = Instant::now();
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn app_switch_count(&self) -> usize {
+        self.app_switches.len()
+    }
+
     fn resume_in_seconds(&self) -> Option<u64> {
         match self.status {
             DetectionStatus::Paused => self.pause_remaining.map(|duration| duration.as_secs()),
@@ -152,6 +179,7 @@ impl DetectionState {
     fn disable(&mut self) {
         self.status = DetectionStatus::Disabled;
         self.app_switches.clear();
+        self.last_foreground_bundle_id = None;
         self.cooldown_remaining = None;
         self.pause_remaining = None;
         self.last_stuck_detected_at = None;
@@ -174,6 +202,26 @@ impl From<&DetectionState> for DetectionStatusResponse {
             status: state.status,
             resume_in_seconds: state.resume_in_seconds(),
             nudge_active: state.last_stuck_detected_at.is_some(),
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectionDebugResponse {
+    pub app_switch_count: usize,
+    pub idle_seconds: u64,
+    pub last_foreground_bundle_id: Option<String>,
+}
+
+#[cfg(debug_assertions)]
+impl From<&DetectionState> for DetectionDebugResponse {
+    fn from(state: &DetectionState) -> Self {
+        Self {
+            app_switch_count: state.app_switch_count(),
+            idle_seconds: state.last_idle_seconds,
+            last_foreground_bundle_id: state.last_foreground_bundle_id.clone(),
         }
     }
 }
@@ -342,5 +390,38 @@ mod tests {
         assert_eq!(state.status, DetectionStatus::Cooldown);
         assert_eq!(state.cooldown_remaining, Some(Duration::from_secs(30)));
         assert_eq!(state.last_stuck_detected_at, None);
+    }
+
+    #[test]
+    fn record_app_switch_is_ignored_while_disabled() {
+        let mut state = DetectionState::new();
+
+        state.record_app_switch(Some("com.apple.TextEdit"));
+
+        assert_eq!(state.app_switch_count(), 0);
+        assert_eq!(
+            state.last_foreground_bundle_id.as_deref(),
+            Some("com.apple.TextEdit")
+        );
+    }
+
+    #[test]
+    fn record_app_switch_tracks_enabled_runtime_and_clear_resets_window() {
+        let mut state = DetectionState::new();
+        state.sync_config(true, true, Sensitivity::Medium);
+
+        state.record_app_switch(Some("com.apple.TextEdit"));
+        state.update_idle_seconds(42);
+
+        assert_eq!(state.app_switch_count(), 1);
+        assert_eq!(state.last_idle_seconds, 42);
+        assert_eq!(
+            state.last_foreground_bundle_id.as_deref(),
+            Some("com.apple.TextEdit")
+        );
+
+        state.clear_app_switches();
+
+        assert_eq!(state.app_switch_count(), 0);
     }
 }

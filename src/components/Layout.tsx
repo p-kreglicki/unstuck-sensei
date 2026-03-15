@@ -15,10 +15,37 @@ type DetectionStatus = {
   status: "active" | "cooldown" | "disabled" | "notifying" | "paused" | "suppressed";
 };
 
+type DetectionDebug = {
+  appSwitchCount: number;
+  idleSeconds: number;
+  lastForegroundBundleId: string | null;
+};
+
+function formatInvokeError(error: unknown) {
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+
+  return "Command failed.";
+}
+
 function DetectionDebugPanel() {
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const [result, setResult] = useState<DetectionStatus | null>(null);
+  const [result, setResult] = useState<DetectionDebug | DetectionStatus | null>(null);
 
   async function runCommand(command: string) {
     setError(null);
@@ -28,13 +55,16 @@ function DetectionDebugPanel() {
       if (command === "get_detection_status") {
         const status = await invoke<DetectionStatus>("get_detection_status");
         setResult(status);
+      } else if (command === "get_detection_debug") {
+        const debug = await invoke<DetectionDebug>("get_detection_debug");
+        setResult(debug);
       } else {
         await invoke(command);
         const status = await invoke<DetectionStatus>("get_detection_status");
         setResult(status);
       }
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Command failed.");
+      setError(formatInvokeError(nextError));
     } finally {
       setIsRunning(false);
     }
@@ -60,6 +90,14 @@ function DetectionDebugPanel() {
           type="button"
         >
           Get status
+        </button>
+        <button
+          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isRunning}
+          onClick={() => void runCommand("get_detection_debug")}
+          type="button"
+        >
+          Get debug
         </button>
         <button
           className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"

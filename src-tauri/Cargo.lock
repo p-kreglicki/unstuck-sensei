@@ -4708,7 +4708,13 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 name = "unstuck-sensei"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "chrono",
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "serde",
  "serde_json",
  "tauri",
@@ -4720,6 +4726,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
+ "tokio",
 ]
 
 [[package]]
