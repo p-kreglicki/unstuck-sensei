@@ -21,6 +21,27 @@ type DetectionDebug = {
   lastForegroundBundleId: string | null;
 };
 
+function formatInvokeError(error: unknown) {
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+
+  return "Command failed.";
+}
+
 function DetectionDebugPanel() {
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -43,7 +64,7 @@ function DetectionDebugPanel() {
         setResult(status);
       }
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Command failed.");
+      setError(formatInvokeError(nextError));
     } finally {
       setIsRunning(false);
     }

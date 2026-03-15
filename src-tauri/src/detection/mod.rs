@@ -163,6 +163,7 @@ impl DetectionState {
         self.last_tick = Instant::now();
     }
 
+    #[cfg(debug_assertions)]
     pub fn app_switch_count(&self) -> usize {
         self.app_switches.len()
     }
@@ -205,6 +206,7 @@ impl From<&DetectionState> for DetectionStatusResponse {
     }
 }
 
+#[cfg(debug_assertions)]
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectionDebugResponse {
@@ -213,6 +215,7 @@ pub struct DetectionDebugResponse {
     pub last_foreground_bundle_id: Option<String>,
 }
 
+#[cfg(debug_assertions)]
 impl From<&DetectionState> for DetectionDebugResponse {
     fn from(state: &DetectionState) -> Self {
         Self {

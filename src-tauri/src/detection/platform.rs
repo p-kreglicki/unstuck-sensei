@@ -3,7 +3,10 @@ use std::{
     cell::RefCell,
     ffi::c_char,
     ptr::NonNull,
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
     time::Duration,
 };
 
@@ -50,6 +53,11 @@ const SYSTEM_UI_BUNDLE_IDS: &[&str] = &[
     "com.apple.controlcenter",
     "com.apple.screensaver",
 ];
+
+#[cfg(target_os = "macos")]
+static IDLE_POLL_ERROR_REPORTED: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
+static DETECTION_STATE_LOCK_POISONED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "macos")]
 thread_local! {
@@ -155,11 +163,12 @@ fn spawn_idle_polling(app: AppHandle<Wry>) {
 
             match read_idle_seconds() {
                 Ok(idle_seconds) => {
+                    clear_idle_poll_error();
                     with_detection_state(&app, |state| {
                         state.update_idle_seconds(idle_seconds);
                     });
                 }
-                Err(error) => debug_log(&format!("failed to read idle time: {error}")),
+                Err(error) => log_idle_poll_error(&error),
             }
         }
     });
@@ -202,7 +211,7 @@ fn with_detection_state<T>(app: &AppHandle<Wry>, handler: impl FnOnce(&mut Detec
         Ok(mut state) => {
             handler(&mut state);
         }
-        Err(_) => debug_log("detection state lock is poisoned"),
+        Err(_) => log_lock_poisoned(),
     }
 }
 
@@ -261,9 +270,35 @@ fn read_idle_seconds() -> Result<u64, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn debug_log(message: &str) {
+fn debug_log(_message: &str) {
     #[cfg(debug_assertions)]
+    eprintln!("[detection/platform] {_message}");
+}
+
+#[cfg(target_os = "macos")]
+fn error_log(message: &str) {
     eprintln!("[detection/platform] {message}");
+}
+
+#[cfg(target_os = "macos")]
+fn log_idle_poll_error(error: &str) {
+    if !IDLE_POLL_ERROR_REPORTED.swap(true, Ordering::Relaxed) {
+        error_log(&format!("idle polling failed: {error}"));
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn clear_idle_poll_error() {
+    if IDLE_POLL_ERROR_REPORTED.swap(false, Ordering::Relaxed) {
+        error_log("idle polling recovered");
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn log_lock_poisoned() {
+    if !DETECTION_STATE_LOCK_POISONED.swap(true, Ordering::Relaxed) {
+        error_log("detection state lock is poisoned");
+    }
 }
 
 #[cfg(target_os = "macos")]
