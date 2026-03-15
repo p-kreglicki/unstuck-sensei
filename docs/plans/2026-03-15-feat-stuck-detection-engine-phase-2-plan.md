@@ -443,17 +443,17 @@ The platform observer always runs. The state machine controls whether evaluation
 
 **Tasks:**
 
-- [ ] Create `src/hooks/useDetection.ts`
+- [x] Create `src/hooks/useDetection.ts`
   - Listen to `detection-state-changed` events
   - Expose `syncConfig()`, `pause()`, `resume()`, `dismissNudge()` via `invoke()`
   - `isTauri()` guard for browser dev mode
-- [ ] Update `useAuth.tsx` to call `syncConfig()` after profile load with `{ signedIn, enabled, sensitivity }`
-- [ ] Build a dismissible nudge banner component
+- [x] Update `useAuth.tsx` to call `syncConfig()` after profile load with `{ signedIn, enabled, sensitivity }`
+- [x] Build a dismissible nudge banner component
   - Shows when `nudgeActive` is true: "Looks like you were bouncing around. Want to talk it through?"
   - "Start session" button (placeholder — navigates to `/` until Phase 3 adds `/session`)
   - "Dismiss" button calls `dismissNudge()`
   - Auto-hides when `nudgeActive` becomes false
-- [ ] Mount the nudge banner in `Layout.tsx` so it appears on any page
+- [x] Mount the nudge banner in `Layout.tsx` so it appears on any page
 
 **Success criteria**: Frontend receives state change events. After a stuck detection notification, opening the app shows the nudge banner. Dismissing the banner clears the nudge state. The banner does not appear on normal app opens without a recent detection.
 

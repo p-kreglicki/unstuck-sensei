@@ -1,5 +1,4 @@
 import { enable as enableAutostart } from "@tauri-apps/plugin-autostart";
-import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   createContext,
   useContext,
@@ -10,6 +9,7 @@ import {
 import type { Session, User } from "@supabase/supabase-js";
 import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
+import { useDetection } from "./useDetection";
 
 type AuthResult = {
   error: Error | null;
@@ -64,6 +64,7 @@ async function loadDetectionConfig(userId: string): Promise<{
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { syncConfig } = useDetection();
   const user = session?.user ?? null;
 
   useEffect(() => {
@@ -105,16 +106,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!isTauri()) {
-      return;
-    }
-
     let cancelled = false;
 
     async function syncDetectionConfig() {
       try {
         if (!session?.user.id) {
-          await invoke("sync_detection_config", {
+          await syncConfig({
             signedIn: false,
             enabled: false,
             sensitivity: "medium",
@@ -128,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        await invoke("sync_detection_config", {
+        await syncConfig({
           signedIn: true,
           enabled,
           sensitivity,
