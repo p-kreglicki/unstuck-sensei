@@ -24,6 +24,11 @@ const DAILY_RATE_LIMIT = 40;
 const MAX_RECENT_SESSIONS = 3;
 const MAX_STEPS = 5;
 const MAX_TOKENS = 700;
+const CORS_HEADERS = {
+  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  "Access-Control-Allow-Methods": "OPTIONS, POST",
+  "Access-Control-Allow-Origin": "*",
+};
 
 type NormalizedRequest = ChatRequestBody & {
   authorizationToken: string;
@@ -55,6 +60,13 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   return handleChatRequest(request);
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    headers: CORS_HEADERS,
+    status: 204,
+  });
 }
 
 export default POST;
@@ -163,6 +175,7 @@ export async function handleChatRequest(request: Request) {
 
   return new Response(stream, {
     headers: {
+      ...CORS_HEADERS,
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -612,6 +625,7 @@ function jsonResponse(
   return new Response(JSON.stringify(body), {
     ...init,
     headers: {
+      ...CORS_HEADERS,
       "content-type": "application/json; charset=utf-8",
       ...init.headers,
     },
