@@ -16,6 +16,10 @@ import {
   buildSessionSystemPrompt,
   buildSessionUserPrompt,
 } from "../lib/prompts/session.js";
+import {
+  CLARIFYING_ANSWER_MAX_LENGTH,
+  STUCK_ON_MAX_LENGTH,
+} from "../lib/session-input-limits.js";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -56,9 +60,21 @@ type StreamAttemptResult = {
   structured: StructuredChatResponse;
 };
 
-type QueryCountResult = {
-  count: number | null;
-};
+type NormalizedRequestBodyResult =
+  | {
+      kind: "error";
+      message: string;
+    }
+  | {
+      kind: "success";
+      value: Omit<NormalizedRequest, "authorizationToken">;
+    };
+
+type ConsumeChatRateLimitStatus =
+  | "allowed"
+  | "invalid_session"
+  | "rate_limited"
+  | "unauthorized";
 
 type AnthropicErrorPayload = {
   error?: {
@@ -142,9 +158,38 @@ export async function handleChatRequest(request: Request) {
     },
   );
 
-  const rateLimit = await checkRateLimit(scopedClient);
+  let rateLimitStatus: ConsumeChatRateLimitStatus;
 
-  if (rateLimit.exceeded) {
+  try {
+    rateLimitStatus = await consumeRateLimit(scopedClient, normalizedRequest.sessionId);
+  } catch (error) {
+    console.error("[chat] rate limit reservation failed", {
+      error: error instanceof Error ? error.message : String(error),
+      sessionId: normalizedRequest.sessionId,
+      userId: user.id,
+    });
+
+    return jsonResponse(
+      { error: "Unable to start the chat right now." },
+      { status: 500 },
+    );
+  }
+
+  if (rateLimitStatus === "unauthorized") {
+    return jsonResponse(
+      { error: "Unauthorized. Sign in again and retry." },
+      { status: 401 },
+    );
+  }
+
+  if (rateLimitStatus === "invalid_session") {
+    return jsonResponse(
+      { error: "Save the task first, then try again." },
+      { status: 400 },
+    );
+  }
+
+  if (rateLimitStatus === "rate_limited") {
     return jsonResponse(
       { error: "Rate limit reached. Take a breath, then try again soon." },
       { status: 429 },
@@ -360,34 +405,38 @@ async function loadRecentSessions(
   return (data as RecentSessionRow[]).map((session) => toSessionSummary(session));
 }
 
-async function checkRateLimit(client: { from(table: string): any }) {
-  const now = new Date();
-  const hourStart = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
-  const dayStart = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+export async function consumeRateLimit(
+  client: {
+    rpc(fn: string, args: Record<string, unknown>): PromiseLike<{
+      data: unknown;
+      error: { message?: string } | null;
+    }>;
+  },
+  sessionId: string,
+) {
+  const { data, error } = await client.rpc("consume_chat_rate_limit", {
+    input_daily_limit: DAILY_RATE_LIMIT,
+    input_hourly_limit: HOURLY_RATE_LIMIT,
+    input_session_id: sessionId,
+  });
 
-  const [{ count: hourlyCount }, { count: dailyCount }] = (await Promise.all([
-    client
-      .from("conversation_messages")
-      .select("id", { count: "exact", head: true })
-      .eq("role", "assistant")
-      .gte("created_at", hourStart),
-    client
-      .from("conversation_messages")
-      .select("id", { count: "exact", head: true })
-      .eq("role", "assistant")
-      .gte("created_at", dayStart),
-  ])) as [QueryCountResult, QueryCountResult];
+  if (error) {
+    throw new Error(error.message ?? "Rate limit reservation failed.");
+  }
 
-  return {
-    exceeded:
-      (hourlyCount ?? 0) >= HOURLY_RATE_LIMIT ||
-      (dailyCount ?? 0) >= DAILY_RATE_LIMIT,
-  };
+  if (!isConsumeChatRateLimitStatus(data)) {
+    throw new Error("Rate limit reservation returned an invalid status.");
+  }
+
+  return data;
 }
 
-function normalizeRequestBody(body: unknown): Omit<NormalizedRequest, "authorizationToken"> | null {
+export function normalizeRequestBody(body: unknown): NormalizedRequestBodyResult {
   if (!body || typeof body !== "object") {
-    return null;
+    return {
+      kind: "error",
+      message: "Invalid chat request payload.",
+    };
   }
 
   const candidate = body as Partial<ChatRequestBody>;
@@ -402,23 +451,68 @@ function normalizeRequestBody(body: unknown): Omit<NormalizedRequest, "authoriza
     !isEnergyLevel(candidate.energyLevel) ||
     !isSessionSource(candidate.source)
   ) {
-    return null;
+    return {
+      kind: "error",
+      message: "Invalid chat request payload.",
+    };
   }
 
   if (
     candidate.clarifyingAnswer !== undefined &&
     typeof candidate.clarifyingAnswer !== "string"
   ) {
-    return null;
+    return {
+      kind: "error",
+      message: "Invalid chat request payload.",
+    };
+  }
+
+  const sessionId = candidate.sessionId.trim();
+  const stuckOn = candidate.stuckOn.trim();
+
+  if (sessionId.length === 0) {
+    return {
+      kind: "error",
+      message: "Invalid chat request payload.",
+    };
+  }
+
+  if (stuckOn.length === 0) {
+    return {
+      kind: "error",
+      message: "stuckOn is required.",
+    };
+  }
+
+  if (stuckOn.length > STUCK_ON_MAX_LENGTH) {
+    return {
+      kind: "error",
+      message: `stuckOn must be ${STUCK_ON_MAX_LENGTH} characters or fewer.`,
+    };
+  }
+
+  const clarifyingAnswer = candidate.clarifyingAnswer?.trim();
+
+  if (
+    clarifyingAnswer &&
+    clarifyingAnswer.length > CLARIFYING_ANSWER_MAX_LENGTH
+  ) {
+    return {
+      kind: "error",
+      message: `clarifyingAnswer must be ${CLARIFYING_ANSWER_MAX_LENGTH} characters or fewer.`,
+    };
   }
 
   return {
-    clarifyingAnswer: candidate.clarifyingAnswer?.trim() || undefined,
-    energyLevel: candidate.energyLevel,
-    mode: candidate.mode,
-    sessionId: candidate.sessionId,
-    source: candidate.source,
-    stuckOn: candidate.stuckOn.trim(),
+    kind: "success",
+    value: {
+      clarifyingAnswer: clarifyingAnswer || undefined,
+      energyLevel: candidate.energyLevel,
+      mode: candidate.mode,
+      sessionId,
+      source: candidate.source,
+      stuckOn,
+    },
   };
 }
 
@@ -454,17 +548,17 @@ async function normalizeRequest(
 
   const normalizedBody = normalizeRequestBody(body);
 
-  if (!normalizedBody) {
+  if (normalizedBody.kind === "error") {
     return {
       response: jsonResponse(
-        { error: "Invalid chat request payload." },
+        { error: normalizedBody.message },
         { status: 400 },
       ),
     };
   }
 
   return {
-    ...normalizedBody,
+    ...normalizedBody.value,
     authorizationToken: authorization.slice("Bearer ".length).trim(),
   };
 }
@@ -617,6 +711,17 @@ function getRequiredEnvironment():
 
 function isRequestMode(value: unknown): value is ChatRequestMode {
   return value === "clarification" || value === "initial" || value === "retry";
+}
+
+function isConsumeChatRateLimitStatus(
+  value: unknown,
+): value is ConsumeChatRateLimitStatus {
+  return (
+    value === "allowed" ||
+    value === "invalid_session" ||
+    value === "rate_limited" ||
+    value === "unauthorized"
+  );
 }
 
 function isRetryableStatus(status: number) {

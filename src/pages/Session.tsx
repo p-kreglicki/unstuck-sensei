@@ -8,6 +8,10 @@ import { useAuth } from "../hooks/useAuth";
 import { useChat } from "../hooks/useChat";
 import { toDisplayError } from "../lib/errors";
 import {
+  CLARIFYING_ANSWER_MAX_LENGTH,
+  STUCK_ON_MAX_LENGTH,
+} from "../lib/session-input-limits";
+import {
   createSessionDraft,
   insertConversationMessage,
   loadActiveSessionDraft,
@@ -167,6 +171,11 @@ export function Session() {
       return;
     }
 
+    if (stuckOn.length > STUCK_ON_MAX_LENGTH) {
+      setStatusMessage(`Keep the task under ${STUCK_ON_MAX_LENGTH} characters.`);
+      return;
+    }
+
     setIsSavingDraft(true);
     setStatusMessage(null);
 
@@ -196,6 +205,11 @@ export function Session() {
 
     if (!sessionRow || !stuckOn) {
       setStatusMessage("Save the task first so I know what we’re working on.");
+      return;
+    }
+
+    if (stuckOn.length > STUCK_ON_MAX_LENGTH) {
+      setStatusMessage(`Keep the task under ${STUCK_ON_MAX_LENGTH} characters.`);
       return;
     }
 
@@ -240,6 +254,13 @@ export function Session() {
       return;
     }
 
+    if (answer.length > CLARIFYING_ANSWER_MAX_LENGTH) {
+      setStatusMessage(
+        `Keep your answer under ${CLARIFYING_ANSWER_MAX_LENGTH} characters.`,
+      );
+      return;
+    }
+
     setStatusMessage(null);
 
     try {
@@ -273,6 +294,13 @@ export function Session() {
       return;
     }
 
+    const stuckOn = sessionRow.stuck_on ?? stuckOnInput.trim();
+
+    if (!stuckOn || stuckOn.length > STUCK_ON_MAX_LENGTH) {
+      setStatusMessage(`Keep the task under ${STUCK_ON_MAX_LENGTH} characters.`);
+      return;
+    }
+
     setIsRetrying(true);
     setStatusMessage(null);
 
@@ -280,7 +308,7 @@ export function Session() {
       const structured = await chat.retry({
         energyLevel,
         source: (sessionRow.source as SessionSource | null) ?? requestedSource,
-        stuckOn: sessionRow.stuck_on ?? stuckOnInput.trim(),
+        stuckOn,
       });
 
       await commitStructuredResult(sessionRow, structured);

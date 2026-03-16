@@ -1,3 +1,5 @@
+import { STUCK_ON_MAX_LENGTH } from "../../lib/session-input-limits";
+
 type StuckInputProps = {
   helperText?: string | null;
   isSubmitting: boolean;
@@ -44,6 +46,7 @@ export function StuckInput({
         <textarea
           className="min-h-32 w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-4 text-white outline-none transition placeholder:text-slate-500 focus:border-teal-300"
           disabled={isSubmitting}
+          maxLength={STUCK_ON_MAX_LENGTH}
           onChange={(event) => onChange(event.currentTarget.value)}
           placeholder="I keep bouncing between smaller tasks instead of shipping..."
           value={value}

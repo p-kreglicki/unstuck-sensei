@@ -9,6 +9,42 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      chat_request_logs: {
+        Row: {
+          created_at: string;
+          id: string;
+          session_id: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          session_id: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          session_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            columns: ["session_id"];
+            foreignKeyName: "chat_request_logs_session_id_fkey";
+            isOneToOne: false;
+            referencedColumns: ["id"];
+            referencedRelation: "sessions";
+          },
+          {
+            columns: ["user_id"];
+            foreignKeyName: "chat_request_logs_user_id_fkey";
+            isOneToOne: false;
+            referencedColumns: ["id"];
+            referencedRelation: "users";
+          },
+        ];
+      };
       conversation_messages: {
         Row: {
           content: string;
