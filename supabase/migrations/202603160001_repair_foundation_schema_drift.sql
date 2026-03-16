@@ -23,8 +23,11 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
-    WHERE conname = 'profiles_display_name_length_check'
-      AND conrelid = 'public.profiles'::regclass
+    WHERE conrelid = 'public.profiles'::regclass
+      AND conname IN (
+        'profiles_display_name_length_check',
+        'profiles_display_name_check'
+      )
   ) THEN
     ALTER TABLE public.profiles
       ADD CONSTRAINT profiles_display_name_length_check
@@ -33,8 +36,19 @@ BEGIN
 END
 $$;
 
-ALTER TABLE public.profiles
-  VALIDATE CONSTRAINT profiles_display_name_length_check;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'profiles_display_name_length_check'
+      AND conrelid = 'public.profiles'::regclass
+  ) THEN
+    ALTER TABLE public.profiles
+      VALIDATE CONSTRAINT profiles_display_name_length_check;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN
@@ -91,8 +105,11 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
-    WHERE conname = 'sessions_steps_is_array_check'
-      AND conrelid = 'public.sessions'::regclass
+    WHERE conrelid = 'public.sessions'::regclass
+      AND conname IN (
+        'sessions_steps_is_array_check',
+        'sessions_steps_check'
+      )
   ) THEN
     ALTER TABLE public.sessions
       ADD CONSTRAINT sessions_steps_is_array_check
@@ -102,8 +119,11 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
-    WHERE conname = 'sessions_timer_duration_seconds_positive_check'
-      AND conrelid = 'public.sessions'::regclass
+    WHERE conrelid = 'public.sessions'::regclass
+      AND conname IN (
+        'sessions_timer_duration_seconds_positive_check',
+        'sessions_timer_duration_seconds_check'
+      )
   ) THEN
     ALTER TABLE public.sessions
       ADD CONSTRAINT sessions_timer_duration_seconds_positive_check
@@ -112,11 +132,29 @@ BEGIN
 END
 $$;
 
-ALTER TABLE public.sessions
-  VALIDATE CONSTRAINT sessions_steps_is_array_check;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'sessions_steps_is_array_check'
+      AND conrelid = 'public.sessions'::regclass
+  ) THEN
+    ALTER TABLE public.sessions
+      VALIDATE CONSTRAINT sessions_steps_is_array_check;
+  END IF;
 
-ALTER TABLE public.sessions
-  VALIDATE CONSTRAINT sessions_timer_duration_seconds_positive_check;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'sessions_timer_duration_seconds_positive_check'
+      AND conrelid = 'public.sessions'::regclass
+  ) THEN
+    ALTER TABLE public.sessions
+      VALIDATE CONSTRAINT sessions_timer_duration_seconds_positive_check;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN

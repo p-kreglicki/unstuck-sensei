@@ -166,8 +166,6 @@ describe("chat route helpers", () => {
 
     expect(response.status).toBe(429);
     expect(rpcMock).toHaveBeenCalledWith("consume_chat_rate_limit", {
-      input_daily_limit: 40,
-      input_hourly_limit: 12,
       input_session_id: "session-1",
     });
     expect(fetch).not.toHaveBeenCalled();

@@ -23,8 +23,6 @@ import {
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
-const HOURLY_RATE_LIMIT = 12;
-const DAILY_RATE_LIMIT = 40;
 const MAX_RECENT_SESSIONS = 3;
 const MAX_STEPS = 5;
 const MAX_TOKENS = 700;
@@ -415,8 +413,6 @@ export async function consumeRateLimit(
   sessionId: string,
 ) {
   const { data, error } = await client.rpc("consume_chat_rate_limit", {
-    input_daily_limit: DAILY_RATE_LIMIT,
-    input_hourly_limit: HOURLY_RATE_LIMIT,
     input_session_id: sessionId,
   });
 
