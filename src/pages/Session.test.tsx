@@ -104,4 +104,45 @@ describe("Session", () => {
 
     expect(screen.queryByText(/Last time you/)).not.toBeInTheDocument();
   });
+
+  it("keeps the session screen usable when recent-session loading fails", async () => {
+    loadRecentSessionSummariesMock.mockRejectedValue({
+      message: 'column "feedback" does not exist',
+    });
+
+    render(
+      <MemoryRouter>
+        <Session />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("What are you stuck on?")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByText(/Unable to load your current session/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("surfaces setup guidance when the sessions table is missing", async () => {
+    loadActiveSessionDraftMock.mockRejectedValue({
+      message: 'relation "public.sessions" does not exist',
+    });
+    loadRecentSessionSummariesMock.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter>
+        <Session />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Database setup is incomplete. relation "public.sessions" does not exist Run the Supabase migrations for this project and retry.',
+        ),
+      ).toBeInTheDocument();
+    });
+  });
 });

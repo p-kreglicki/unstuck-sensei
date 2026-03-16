@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { encodeSseEvent, parseSseFrames } from "../../../src/lib/chat-sse";
+import { encodeSseEvent, parseSseFrames } from "../lib/chat-sse.js";
 import {
   clampSteps,
   createSessionSteps,
@@ -11,11 +11,11 @@ import {
   type ChatRequestMode,
   type SessionSummary,
   type StructuredChatResponse,
-} from "../../../src/lib/session-flow";
+} from "../lib/session-flow.js";
 import {
   buildSessionSystemPrompt,
   buildSessionUserPrompt,
-} from "../../../src/lib/prompts/session";
+} from "../lib/prompts/session.js";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -24,6 +24,11 @@ const DAILY_RATE_LIMIT = 40;
 const MAX_RECENT_SESSIONS = 3;
 const MAX_STEPS = 5;
 const MAX_TOKENS = 700;
+const CORS_HEADERS = {
+  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  "Access-Control-Allow-Methods": "OPTIONS, POST",
+  "Access-Control-Allow-Origin": "*",
+};
 
 type NormalizedRequest = ChatRequestBody & {
   authorizationToken: string;
@@ -51,13 +56,43 @@ type StreamAttemptResult = {
   structured: StructuredChatResponse;
 };
 
+type QueryCountResult = {
+  count: number | null;
+};
+
+type AnthropicErrorPayload = {
+  error?: {
+    message?: string;
+    type?: string;
+  };
+};
+
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
-  return handleChatRequest(request);
-}
+export default {
+  async fetch(request: Request) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: CORS_HEADERS,
+        status: 204,
+      });
+    }
 
-export default POST;
+    if (request.method !== "POST") {
+      return jsonResponse(
+        { error: "Method not allowed." },
+        {
+          headers: {
+            Allow: "OPTIONS, POST",
+          },
+          status: 405,
+        },
+      );
+    }
+
+    return handleChatRequest(request);
+  },
+};
 
 export async function handleChatRequest(request: Request) {
   const environment = getRequiredEnvironment();
@@ -163,6 +198,7 @@ export async function handleChatRequest(request: Request) {
 
   return new Response(stream, {
     headers: {
+      ...CORS_HEADERS,
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -214,10 +250,7 @@ async function streamAnthropicResponse(input: {
       });
 
       if (!upstreamResponse.ok || !upstreamResponse.body) {
-        const message = await readUpstreamError(upstreamResponse);
-        throw new RetryableError(message, {
-          retryable: isRetryableStatus(upstreamResponse.status),
-        });
+        throw await createAnthropicRequestError(upstreamResponse, input.model);
       }
 
       const reader = upstreamResponse.body.getReader();
@@ -284,6 +317,13 @@ async function streamAnthropicResponse(input: {
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
 
+      if (error instanceof AnthropicRequestError) {
+        logAnthropicRequestError(error, {
+          attempt,
+          bytesWrittenToClient,
+        });
+      }
+
       if (
         error instanceof RetryableError &&
         error.retryable &&
@@ -301,7 +341,7 @@ async function streamAnthropicResponse(input: {
 }
 
 async function loadRecentSessions(
-  client: ReturnType<typeof createClient>,
+  client: { from(table: string): any },
   userId: string,
   currentSessionId: string,
 ) {
@@ -317,15 +357,15 @@ async function loadRecentSessions(
     return [];
   }
 
-  return data.map((session) => toSessionSummary(session as RecentSessionRow));
+  return (data as RecentSessionRow[]).map((session) => toSessionSummary(session));
 }
 
-async function checkRateLimit(client: ReturnType<typeof createClient>) {
+async function checkRateLimit(client: { from(table: string): any }) {
   const now = new Date();
   const hourStart = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
   const dayStart = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
 
-  const [{ count: hourlyCount }, { count: dailyCount }] = await Promise.all([
+  const [{ count: hourlyCount }, { count: dailyCount }] = (await Promise.all([
     client
       .from("conversation_messages")
       .select("id", { count: "exact", head: true })
@@ -336,7 +376,7 @@ async function checkRateLimit(client: ReturnType<typeof createClient>) {
       .select("id", { count: "exact", head: true })
       .eq("role", "assistant")
       .gte("created_at", dayStart),
-  ]);
+  ])) as [QueryCountResult, QueryCountResult];
 
   return {
     exceeded:
@@ -584,25 +624,92 @@ function isRetryableStatus(status: number) {
 }
 
 async function readUpstreamError(response: Response) {
-  try {
-    const body = await response.json();
+  const parsed = await readAnthropicErrorPayload(response);
 
-    if (
-      body &&
-      typeof body === "object" &&
-      "error" in body &&
-      body.error &&
-      typeof body.error === "object" &&
-      "message" in body.error &&
-      typeof body.error.message === "string"
-    ) {
-      return body.error.message;
-    }
+  return {
+    message:
+      parsed?.error?.message?.trim() ||
+      `Anthropic request failed with status ${response.status}.`,
+    type: parsed?.error?.type?.trim() || null,
+  };
+}
+
+async function readAnthropicErrorPayload(response: Response) {
+  try {
+    return (await response.json()) as AnthropicErrorPayload;
   } catch {
-    // Ignore JSON parsing failures and fall through to the status-based message.
+    return null;
+  }
+}
+
+async function createAnthropicRequestError(response: Response, model: string) {
+  const parsed = await readUpstreamError(response);
+  const retryable = isRetryableStatus(response.status);
+
+  return new AnthropicRequestError(
+    normalizeAnthropicError({
+      message: parsed.message,
+      model,
+      status: response.status,
+      type: parsed.type,
+    }),
+    {
+      model,
+      rawMessage: parsed.message,
+      retryable,
+      status: response.status,
+      type: parsed.type,
+    },
+  );
+}
+
+export function normalizeAnthropicError(input: {
+  message: string;
+  model: string;
+  status: number;
+  type: string | null;
+}) {
+  const message = input.message.trim();
+  const lowerMessage = message.toLowerCase();
+
+  if (
+    input.type === "permission_error" ||
+    lowerMessage.includes("permission") ||
+    lowerMessage.includes("not authorized") ||
+    lowerMessage.includes("not allowed") ||
+    lowerMessage.includes("access")
+  ) {
+    return `The configured Anthropic API key does not have access to model "${input.model}". Check ANTHROPIC_API_KEY and ANTHROPIC_MODEL.`;
   }
 
-  return `Anthropic request failed with status ${response.status}.`;
+  if (
+    input.type === "invalid_request_error" &&
+    lowerMessage.includes("model")
+  ) {
+    return `The configured Anthropic model "${input.model}" is unavailable. Check ANTHROPIC_MODEL against Anthropic's current models list.`;
+  }
+
+  return message || `Anthropic request failed with status ${input.status}.`;
+}
+
+function logAnthropicRequestError(
+  error: AnthropicRequestError,
+  input: {
+    attempt: number;
+    bytesWrittenToClient: boolean;
+  },
+) {
+  console.error("[chat] anthropic request failed", {
+    attempt: input.attempt + 1,
+    message: error.message,
+    model: error.model,
+    provider: "anthropic",
+    rawMessage: error.rawMessage,
+    retryable: error.retryable,
+    status: error.status,
+    streamedToClient: input.bytesWrittenToClient,
+    type: error.type,
+  });
 }
 
 function jsonResponse(
@@ -612,6 +719,7 @@ function jsonResponse(
   return new Response(JSON.stringify(body), {
     ...init,
     headers: {
+      ...CORS_HEADERS,
       "content-type": "application/json; charset=utf-8",
       ...init.headers,
     },
@@ -683,5 +791,30 @@ class RetryableError extends Error {
     super(message);
     this.name = "RetryableError";
     this.retryable = options.retryable;
+  }
+}
+
+class AnthropicRequestError extends RetryableError {
+  model: string;
+  rawMessage: string;
+  status: number;
+  type: string | null;
+
+  constructor(
+    message: string,
+    options: {
+      model: string;
+      rawMessage: string;
+      retryable: boolean;
+      status: number;
+      type: string | null;
+    },
+  ) {
+    super(message, { retryable: options.retryable });
+    this.model = options.model;
+    this.name = "AnthropicRequestError";
+    this.rawMessage = options.rawMessage;
+    this.status = options.status;
+    this.type = options.type;
   }
 }

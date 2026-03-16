@@ -6,6 +6,7 @@ import { StepsList } from "../components/session/StepsList";
 import { StuckInput } from "../components/session/StuckInput";
 import { useAuth } from "../hooks/useAuth";
 import { useChat } from "../hooks/useChat";
+import { toDisplayError } from "../lib/errors";
 import {
   createSessionDraft,
   insertConversationMessage,
@@ -72,8 +73,22 @@ export function Session() {
       try {
         const activeSession = await loadActiveSessionDraft(user.id);
         const [recent, sessionMessages] = await Promise.all([
-          loadRecentSessionSummaries(user.id, activeSession?.id),
-          activeSession ? loadConversationMessages(activeSession.id) : Promise.resolve([]),
+          loadRecentSessionSummaries(user.id, activeSession?.id).catch((error) => {
+            if (import.meta.env.DEV) {
+              console.warn("[session] recent summaries failed:", error);
+            }
+
+            return [];
+          }),
+          activeSession
+            ? loadConversationMessages(activeSession.id).catch((error) => {
+                if (import.meta.env.DEV) {
+                  console.warn("[session] conversation load failed:", error);
+                }
+
+                return [];
+              })
+            : Promise.resolve([]),
         ]);
 
         if (!active) {
@@ -110,11 +125,7 @@ export function Session() {
           return;
         }
 
-        setStatusMessage(
-          error instanceof Error
-            ? error.message
-            : "Unable to load your current session.",
-        );
+        setStatusMessage(toDisplayError(error, "Unable to load your current session."));
       } finally {
         if (active) {
           setIsBooting(false);
@@ -174,11 +185,7 @@ export function Session() {
       setSessionRow(nextSession);
       setStuckOnInput(nextSession.stuck_on ?? stuckOn);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to save your draft session.",
-      );
+      setStatusMessage(toDisplayError(error, "Unable to save your draft session."));
     } finally {
       setIsSavingDraft(false);
     }
@@ -222,11 +229,7 @@ export function Session() {
 
       await commitStructuredResult(nextSession, structured);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to generate your first steps.",
-      );
+      setStatusMessage(toDisplayError(error, "Unable to generate your first steps."));
     }
   }
 
@@ -261,11 +264,7 @@ export function Session() {
 
       await commitStructuredResult(nextSession, structured);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to refine the session.",
-      );
+      setStatusMessage(toDisplayError(error, "Unable to refine the session."));
     }
   }
 
@@ -286,11 +285,7 @@ export function Session() {
 
       await commitStructuredResult(sessionRow, structured);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to try again right now.",
-      );
+      setStatusMessage(toDisplayError(error, "Unable to try again right now."));
     } finally {
       setIsRetrying(false);
     }
@@ -310,11 +305,7 @@ export function Session() {
       });
       setSessionRow(nextSession);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to save the new step order.",
-      );
+      setStatusMessage(toDisplayError(error, "Unable to save the new step order."));
       setSteps(steps);
     }
   }
