@@ -62,28 +62,30 @@ type QueryCountResult = {
 
 export const runtime = "nodejs";
 
-export default async function handler(request: Request) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      headers: CORS_HEADERS,
-      status: 204,
-    });
-  }
+export default {
+  async fetch(request: Request) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: CORS_HEADERS,
+        status: 204,
+      });
+    }
 
-  if (request.method !== "POST") {
-    return jsonResponse(
-      { error: "Method not allowed." },
-      {
-        headers: {
-          Allow: "OPTIONS, POST",
+    if (request.method !== "POST") {
+      return jsonResponse(
+        { error: "Method not allowed." },
+        {
+          headers: {
+            Allow: "OPTIONS, POST",
+          },
+          status: 405,
         },
-        status: 405,
-      },
-    );
-  }
+      );
+    }
 
-  return handleChatRequest(request);
-}
+    return handleChatRequest(request);
+  },
+};
 
 export async function handleChatRequest(request: Request) {
   const environment = getRequiredEnvironment();
