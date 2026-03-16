@@ -461,18 +461,18 @@ The platform observer always runs. The state machine controls whether evaluation
 
 ### Functional Requirements
 
-- [ ] App-switch frequency is monitored in the background via macOS NSWorkspace notifications
-- [ ] System idle time is polled every 5 seconds via IOKit
-- [ ] Stuck detection fires when switch count exceeds threshold AND idle < 120s in a 5-minute window
-- [ ] Native macOS notification is sent with warm, non-judgmental copy
-- [ ] Opening the app after a detection shows a dismissible nudge banner (not auto-routing)
-- [ ] 30-minute cooldown after notification (both dismissal and auto-expiry enter cooldown)
-- [ ] Maximum 6 notifications per calendar day
+- [x] App-switch frequency is monitored in the background via macOS NSWorkspace notifications
+- [x] System idle time is polled every 5 seconds via IOKit
+- [x] Stuck detection fires when switch count exceeds threshold AND idle < 120s in a 5-minute window
+- [x] Native macOS notification is sent with warm, non-judgmental copy
+- [x] Opening the app after a detection shows a dismissible nudge banner (not auto-routing)
+- [x] 30-minute cooldown after notification (both dismissal and auto-expiry enter cooldown)
+- [x] Maximum 6 notifications per calendar day
 - [x] Detection suppressed during native meeting apps (Zoom, Teams, FaceTime, WebEx)
 - [x] Detection suppressed when app main window is visible
 - [x] Manual pause from tray menu with 2-hour auto-resume
 - [x] Tray menu label toggles between "Pause Detection" and "Resume Detection"
-- [ ] `sync_detection_config` command accepts enabled, sensitivity, and signedIn from frontend
+- [x] `sync_detection_config` command accepts enabled, sensitivity, and signedIn from frontend
 - [ ] Sensitivity and enabled changes take effect immediately when pushed via `sync_detection_config`
 - [x] Detection stops on sign-out, resumes on sign-in (both via `sync_detection_config`)
 - [ ] Sliding window clears on machine wake
@@ -481,11 +481,11 @@ The platform observer always runs. The state machine controls whether evaluation
 
 ### Non-Functional Requirements
 
-- [ ] Zero content logging — only switch timestamps and idle seconds
-- [ ] App-switch monitoring is event-driven (zero CPU when no switches)
-- [ ] Idle polling interval is 5 seconds (minimal battery impact)
+- [x] Zero content logging — only switch timestamps and idle seconds
+- [x] App-switch monitoring is event-driven (zero CPU when no switches)
+- [x] Idle polling interval is 5 seconds (minimal battery impact)
 - [ ] State transitions are logged to console in debug builds
-- [ ] All detection logic runs in Rust (no frontend polling)
+- [x] All detection logic runs in Rust (no frontend polling)
 
 ### Quality Gates
 
@@ -493,10 +493,10 @@ The platform observer always runs. The state machine controls whether evaluation
 - [ ] Evaluator tested across all three sensitivity levels
 - [ ] Cooldown and pause duration decrement tested (including zero-crossing)
 - [x] Suppression tested: meeting app, manual pause, app foregrounded, signed out
-- [ ] Sliding window correctly prunes stale events
-- [ ] Daily notification cap tested
+- [x] Sliding window correctly prunes stale events
+- [x] Daily notification cap tested
 - [ ] Sleep/wake correctly resets sliding window
-- [ ] `sync_detection_config` correctly transitions between Disabled/Active
+- [x] `sync_detection_config` correctly transitions between Disabled/Active
 - [ ] Nudge banner appears only after recent detection, not on normal app open
 - [ ] Frontend receives state change events
 
