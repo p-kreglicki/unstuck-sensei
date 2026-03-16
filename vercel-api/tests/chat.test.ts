@@ -1,4 +1,9 @@
-import { handleChatRequest, normalizeStructuredResponse, OutputAccumulator } from "../api/chat.js";
+import {
+  handleChatRequest,
+  normalizeAnthropicError,
+  normalizeStructuredResponse,
+  OutputAccumulator,
+} from "../api/chat.js";
 
 describe("chat route helpers", () => {
   beforeEach(() => {
@@ -33,6 +38,55 @@ describe("chat route helpers", () => {
     );
 
     expect(response.status).toBe(401);
+  });
+
+  it("returns 500 when required env is missing", async () => {
+    delete process.env.ANTHROPIC_MODEL;
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: "session-1",
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(500);
+  });
+
+  it("normalizes invalid Anthropic model errors into deployment guidance", () => {
+    expect(
+      normalizeAnthropicError({
+        message: "model: claude-3-5-haiku-latest",
+        model: "claude-3-5-haiku-latest",
+        status: 400,
+        type: "invalid_request_error",
+      }),
+    ).toBe(
+      'The configured Anthropic model "claude-3-5-haiku-latest" is unavailable. Check ANTHROPIC_MODEL against Anthropic\'s current models list.',
+    );
+  });
+
+  it("normalizes Anthropic permission errors into key guidance", () => {
+    expect(
+      normalizeAnthropicError({
+        message: "You do not have access to this model.",
+        model: "claude-haiku-4-5",
+        status: 403,
+        type: "permission_error",
+      }),
+    ).toBe(
+      'The configured Anthropic API key does not have access to model "claude-haiku-4-5". Check ANTHROPIC_API_KEY and ANTHROPIC_MODEL.',
+    );
   });
 
   it("normalizes a valid structured steps response", () => {

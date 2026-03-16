@@ -35,3 +35,9 @@ Manual follow-up is still required for:
 - Deep link callback validation
 - Live auth testing against a real backend
 - GUI verification of tray behavior in `tauri dev`
+
+## Deploy Notes
+
+- `ANTHROPIC_MODEL` must be a currently supported Anthropic model ID or alias.
+- Before changing `ANTHROPIC_MODEL`, check Anthropic's current models overview and release notes.
+- If chat requests fail with a model or permission error, verify the Vercel production values for `ANTHROPIC_MODEL` and `ANTHROPIC_API_KEY` before debugging app code.
