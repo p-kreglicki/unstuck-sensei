@@ -6,10 +6,11 @@ use std::sync::{
 mod commands;
 mod detection;
 
+use serde::Serialize;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, RunEvent, WindowEvent, Wry,
+    AppHandle, Emitter, Manager, RunEvent, WindowEvent, Wry,
 };
 
 use crate::detection::{
@@ -17,11 +18,19 @@ use crate::detection::{
 };
 
 const TRAY_ID: &str = "main";
+const APP_NAVIGATE_EVENT: &str = "app:navigate";
 const MENU_SIGN_IN: &str = "sign-in";
 const MENU_START_SESSION: &str = "start-session";
 const MENU_PAUSE_DETECTION: &str = "pause-detection";
 const MENU_SETTINGS: &str = "settings";
 const MENU_QUIT: &str = "quit";
+
+#[derive(Clone, Serialize)]
+struct AppNavigatePayload {
+    to: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<&'static str>,
+}
 
 fn build_tray_menu<M: Manager<Wry>>(
     manager: &M,
@@ -110,6 +119,25 @@ fn show_main_window(app: &AppHandle<Wry>, window_visible: &AtomicBool) {
         window_visible.store(true, Ordering::SeqCst);
         sync_detection_window_visibility(app, true);
     }
+}
+
+fn navigate_app(app: &AppHandle<Wry>, to: &'static str, source: Option<&'static str>) {
+    if let Err(error) = app.emit(
+        APP_NAVIGATE_EVENT,
+        AppNavigatePayload { to, source },
+    ) {
+        eprintln!("[tray] failed to emit app navigation event: {error}");
+    }
+}
+
+fn show_main_window_and_route(
+    app: &AppHandle<Wry>,
+    window_visible: &AtomicBool,
+    to: &'static str,
+    source: Option<&'static str>,
+) {
+    show_main_window(app, window_visible);
+    navigate_app(app, to, source);
 }
 
 fn toggle_main_window(app: &AppHandle<Wry>, window_visible: &AtomicBool) {
@@ -204,9 +232,19 @@ pub fn run() {
                         let window_visible = Arc::clone(&window_visible);
 
                         move |app, event| match event.id().as_ref() {
-                            MENU_SIGN_IN | MENU_START_SESSION | MENU_SETTINGS => {
-                                show_main_window(app, &window_visible)
-                            }
+                            MENU_SIGN_IN => show_main_window(app, &window_visible),
+                            MENU_START_SESSION => show_main_window_and_route(
+                                app,
+                                &window_visible,
+                                "/",
+                                Some("tray"),
+                            ),
+                            MENU_SETTINGS => show_main_window_and_route(
+                                app,
+                                &window_visible,
+                                "/settings",
+                                Some("tray"),
+                            ),
                             MENU_PAUSE_DETECTION => {
                                 if let Err(error) = toggle_detection_pause(app) {
                                     eprintln!("[tray] failed to toggle detection pause: {error}");
