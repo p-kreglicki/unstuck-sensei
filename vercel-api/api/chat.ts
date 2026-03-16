@@ -60,32 +60,30 @@ type QueryCountResult = {
   count: number | null;
 };
 
-type SupabaseQueryClient = {
-  from(table: string): {
-    select(query: string, options?: { count?: "exact"; head?: boolean }): {
-      eq(column: string, value: string): any;
-      neq(column: string, value: string): any;
-      gte(column: string, value: string): any;
-      order(column: string, options: { ascending: boolean }): any;
-      limit(value: number): Promise<{ data: unknown[] | null; error: unknown }>;
-    };
-  };
-};
-
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
+export default async function handler(request: Request) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      headers: CORS_HEADERS,
+      status: 204,
+    });
+  }
+
+  if (request.method !== "POST") {
+    return jsonResponse(
+      { error: "Method not allowed." },
+      {
+        headers: {
+          Allow: "OPTIONS, POST",
+        },
+        status: 405,
+      },
+    );
+  }
+
   return handleChatRequest(request);
 }
-
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: CORS_HEADERS,
-    status: 204,
-  });
-}
-
-export default POST;
 
 export async function handleChatRequest(request: Request) {
   const environment = getRequiredEnvironment();
@@ -330,7 +328,7 @@ async function streamAnthropicResponse(input: {
 }
 
 async function loadRecentSessions(
-  client: SupabaseQueryClient,
+  client: { from(table: string): any },
   userId: string,
   currentSessionId: string,
 ) {
@@ -346,10 +344,10 @@ async function loadRecentSessions(
     return [];
   }
 
-  return data.map((session) => toSessionSummary(session as RecentSessionRow));
+  return (data as RecentSessionRow[]).map((session) => toSessionSummary(session));
 }
 
-async function checkRateLimit(client: SupabaseQueryClient) {
+async function checkRateLimit(client: { from(table: string): any }) {
   const now = new Date();
   const hourStart = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
   const dayStart = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
