@@ -2,18 +2,14 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useAuth } from "../hooks/useAuth";
+import { type DetectionState, useDetection } from "../hooks/useDetection";
+import { DetectionNudgeBanner } from "./DetectionNudgeBanner";
 
 const navItems = [
   { label: "Session", to: "/" },
   { label: "History", to: "/history" },
   { label: "Settings", to: "/settings" },
 ];
-
-type DetectionStatus = {
-  nudgeActive: boolean;
-  resumeInSeconds: number | null;
-  status: "active" | "cooldown" | "disabled" | "notifying" | "paused" | "suppressed";
-};
 
 type DetectionDebug = {
   appSwitchCount: number;
@@ -43,9 +39,10 @@ function formatInvokeError(error: unknown) {
 }
 
 function DetectionDebugPanel() {
+  const { dismissNudge, pause, refreshStatus, resume } = useDetection();
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const [result, setResult] = useState<DetectionDebug | DetectionStatus | null>(null);
+  const [result, setResult] = useState<DetectionDebug | DetectionState | null>(null);
 
   async function runCommand(command: string) {
     setError(null);
@@ -53,14 +50,22 @@ function DetectionDebugPanel() {
 
     try {
       if (command === "get_detection_status") {
-        const status = await invoke<DetectionStatus>("get_detection_status");
+        const status = await refreshStatus();
         setResult(status);
       } else if (command === "get_detection_debug") {
         const debug = await invoke<DetectionDebug>("get_detection_debug");
         setResult(debug);
+      } else if (command === "pause_detection") {
+        await pause();
+        setResult(await refreshStatus());
+      } else if (command === "resume_detection") {
+        await resume();
+        setResult(await refreshStatus());
+      } else if (command === "dismiss_nudge") {
+        await dismissNudge();
+        setResult(await refreshStatus());
       } else {
-        await invoke(command);
-        const status = await invoke<DetectionStatus>("get_detection_status");
+        const status = await refreshStatus();
         setResult(status);
       }
     } catch (nextError) {
@@ -138,8 +143,18 @@ function DetectionDebugPanel() {
   );
 }
 
+const detectionStatusLabels: Record<DetectionState["status"], string> = {
+  active: "Detection active",
+  cooldown: "Cooling down",
+  disabled: "Detection off",
+  notifying: "Notification live",
+  paused: "Detection paused",
+  suppressed: "Detection suppressed",
+};
+
 export function Layout() {
   const { isLoading, user, signOut } = useAuth();
+  const { state } = useDetection();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   return (
@@ -154,7 +169,7 @@ export function Layout() {
               Foundation Shell
             </h1>
             <p className="mt-2 text-sm text-slate-400">
-              Phase 1 wires auth, navigation, tray behavior, and the desktop app skeleton.
+              A lightweight desktop coach that notices friction and helps you get unstuck.
             </p>
           </div>
           <button
@@ -197,7 +212,7 @@ export function Layout() {
         <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
           <span className="truncate">{user?.email ?? "Not signed in"}</span>
           <span className="rounded-full bg-emerald-400/15 px-2.5 py-1 text-xs font-medium text-emerald-300">
-            Phase 1
+            {detectionStatusLabels[state.status]}
           </span>
         </div>
 
@@ -206,6 +221,8 @@ export function Layout() {
             {statusMessage}
           </p>
         ) : null}
+
+        <DetectionNudgeBanner />
 
         {import.meta.env.DEV && isTauri() ? <DetectionDebugPanel /> : null}
 
