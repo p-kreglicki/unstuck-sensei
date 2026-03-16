@@ -1,4 +1,4 @@
-import { handleChatRequest, normalizeStructuredResponse, OutputAccumulator } from "./chat";
+import { handleChatRequest, normalizeStructuredResponse, OutputAccumulator } from "../api/chat.js";
 
 describe("chat route helpers", () => {
   beforeEach(() => {

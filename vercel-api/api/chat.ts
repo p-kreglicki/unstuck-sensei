@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { encodeSseEvent, parseSseFrames } from "../lib/chat-sse";
+import { encodeSseEvent, parseSseFrames } from "../lib/chat-sse.js";
 import {
   clampSteps,
   createSessionSteps,
@@ -11,11 +11,11 @@ import {
   type ChatRequestMode,
   type SessionSummary,
   type StructuredChatResponse,
-} from "../lib/session-flow";
+} from "../lib/session-flow.js";
 import {
   buildSessionSystemPrompt,
   buildSessionUserPrompt,
-} from "../lib/prompts/session";
+} from "../lib/prompts/session.js";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -54,6 +54,22 @@ type RecentSessionRow = {
 type StreamAttemptResult = {
   assistantText: string;
   structured: StructuredChatResponse;
+};
+
+type QueryCountResult = {
+  count: number | null;
+};
+
+type SupabaseQueryClient = {
+  from(table: string): {
+    select(query: string, options?: { count?: "exact"; head?: boolean }): {
+      eq(column: string, value: string): any;
+      neq(column: string, value: string): any;
+      gte(column: string, value: string): any;
+      order(column: string, options: { ascending: boolean }): any;
+      limit(value: number): Promise<{ data: unknown[] | null; error: unknown }>;
+    };
+  };
 };
 
 export const runtime = "nodejs";
@@ -314,7 +330,7 @@ async function streamAnthropicResponse(input: {
 }
 
 async function loadRecentSessions(
-  client: ReturnType<typeof createClient>,
+  client: SupabaseQueryClient,
   userId: string,
   currentSessionId: string,
 ) {
@@ -333,12 +349,12 @@ async function loadRecentSessions(
   return data.map((session) => toSessionSummary(session as RecentSessionRow));
 }
 
-async function checkRateLimit(client: ReturnType<typeof createClient>) {
+async function checkRateLimit(client: SupabaseQueryClient) {
   const now = new Date();
   const hourStart = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
   const dayStart = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
 
-  const [{ count: hourlyCount }, { count: dailyCount }] = await Promise.all([
+  const [{ count: hourlyCount }, { count: dailyCount }] = (await Promise.all([
     client
       .from("conversation_messages")
       .select("id", { count: "exact", head: true })
@@ -349,7 +365,7 @@ async function checkRateLimit(client: ReturnType<typeof createClient>) {
       .select("id", { count: "exact", head: true })
       .eq("role", "assistant")
       .gte("created_at", dayStart),
-  ]);
+  ])) as [QueryCountResult, QueryCountResult];
 
   return {
     exceeded:
