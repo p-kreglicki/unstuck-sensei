@@ -52,7 +52,11 @@ export function DetectionNudgeBanner() {
 
     try {
       await dismissNudge();
-      navigate("/");
+      navigate("/", {
+        state: {
+          sessionSource: "detection",
+        },
+      });
     } catch (nextError) {
       setError(formatCommandError(nextError));
     } finally {

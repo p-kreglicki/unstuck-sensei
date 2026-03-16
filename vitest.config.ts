@@ -1,0 +1,14 @@
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    environment: "jsdom",
+    environmentMatchGlobs: [
+      ["vercel-api/**/*.test.ts", "node"],
+    ],
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
+  },
+});
