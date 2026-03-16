@@ -2,6 +2,9 @@
   "name": "unstuck-sensei-api",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build": "node -e \"console.log('vercel-api: no build step required')\""
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.56.0"
   }
