@@ -70,9 +70,6 @@ export function DetectionNudgeBanner() {
           <h2 className="mt-2 text-lg font-semibold text-white">
             Looks like you were bouncing around. Want to talk it through?
           </h2>
-          <p className="mt-2 text-sm leading-6 text-teal-50/80">
-            Session routing lands in Phase 3, so this currently opens the main session shell.
-          </p>
         </div>
       </div>
 

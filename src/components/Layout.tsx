@@ -169,7 +169,7 @@ export function Layout() {
               Foundation Shell
             </h1>
             <p className="mt-2 text-sm text-slate-400">
-              Phase 2 keeps desktop detection state, nudges, and the protected shell aligned.
+              A lightweight desktop coach that notices friction and helps you get unstuck.
             </p>
           </div>
           <button
