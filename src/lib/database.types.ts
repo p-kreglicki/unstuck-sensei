@@ -31,6 +31,15 @@ export type Database = {
           role?: "user" | "assistant";
           session_id?: string;
         };
+        Relationships: [
+          {
+            columns: ["session_id"];
+            foreignKeyName: "conversation_messages_session_id_fkey";
+            isOneToOne: false;
+            referencedColumns: ["id"];
+            referencedRelation: "sessions";
+          },
+        ];
       };
       profiles: {
         Row: {
@@ -69,6 +78,15 @@ export type Database = {
           timezone?: string | null;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            columns: ["id"];
+            foreignKeyName: "profiles_id_fkey";
+            isOneToOne: true;
+            referencedColumns: ["id"];
+            referencedRelation: "users";
+          },
+        ];
       };
       sessions: {
         Row: {
@@ -125,7 +143,20 @@ export type Database = {
           updated_at?: string;
           user_id?: string;
         };
+        Relationships: [
+          {
+            columns: ["user_id"];
+            foreignKeyName: "sessions_user_id_fkey";
+            isOneToOne: false;
+            referencedColumns: ["id"];
+            referencedRelation: "users";
+          },
+        ];
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 };
