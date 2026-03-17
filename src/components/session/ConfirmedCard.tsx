@@ -1,4 +1,4 @@
-import type { SessionStep } from "../../lib/session-flow";
+import type { SessionStep } from "../../../shared/session/session-protocol.js";
 
 export function ConfirmedCard({ steps }: { steps: SessionStep[] }) {
   return (

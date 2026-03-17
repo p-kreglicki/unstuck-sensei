@@ -5,7 +5,7 @@ import { toDisplayError } from "../lib/errors";
 import {
   CLARIFYING_ANSWER_MAX_LENGTH,
   STUCK_ON_MAX_LENGTH,
-} from "../lib/session-input-limits";
+} from "../../shared/session/session-input-limits.js";
 import {
   createSessionDraft,
   insertConversationMessage,
@@ -18,15 +18,14 @@ import {
   type SessionRow,
 } from "../lib/session-records";
 import {
-  formatSessionReminder,
   isEnergyLevel,
   isSessionSource,
-  moveStep,
   type EnergyLevel,
   type SessionSource,
   type SessionStep,
   type StructuredChatResponse,
-} from "../lib/session-flow";
+} from "../../shared/session/session-protocol.js";
+import { formatSessionReminder, moveStep } from "../lib/session-flow";
 
 type SessionStage =
   | "clarifying"

@@ -70,6 +70,46 @@ export function parseSessionSteps(value: unknown): SessionStep[] {
   return value.filter(isSessionStep);
 }
 
+function hasAssistantText(value: unknown): value is { assistantText: string } {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "assistantText" in value &&
+    typeof value.assistantText === "string" &&
+    value.assistantText.trim().length > 0
+  );
+}
+
+export function isStructuredChatResponse(
+  value: unknown,
+): value is StructuredChatResponse {
+  if (!value || typeof value !== "object" || !hasAssistantText(value)) {
+    return false;
+  }
+
+  if (
+    "kind" in value &&
+    value.kind === "clarifying_question" &&
+    "question" in value &&
+    typeof value.question === "string" &&
+    value.question.trim().length > 0
+  ) {
+    return true;
+  }
+
+  if (
+    "kind" in value &&
+    value.kind === "steps" &&
+    "steps" in value &&
+    Array.isArray(value.steps) &&
+    value.steps.every(isSessionStep)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export function createStepId(index: number) {
   return `step-${index + 1}`;
 }

@@ -1,4 +1,4 @@
-import { CLARIFYING_ANSWER_MAX_LENGTH } from "../../lib/session-input-limits";
+import { CLARIFYING_ANSWER_MAX_LENGTH } from "../../../shared/session/session-input-limits.js";
 
 type ClarifyingQuestionProps = {
   answer: string;

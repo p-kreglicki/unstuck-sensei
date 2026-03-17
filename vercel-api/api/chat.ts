@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { encodeSseEvent, parseSseFrames } from "../lib/chat-sse.js";
+import { encodeSseEvent, parseSseFrames } from "../../shared/session/chat-sse.js";
 import {
   clampSteps,
   createSessionSteps,
@@ -11,15 +11,15 @@ import {
   type ChatRequestMode,
   type SessionSummary,
   type StructuredChatResponse,
-} from "../lib/session-flow.js";
+} from "../../shared/session/session-protocol.js";
 import {
   buildSessionSystemPrompt,
   buildSessionUserPrompt,
-} from "../lib/prompts/session.js";
+} from "../../shared/session/session-prompts.js";
 import {
   CLARIFYING_ANSWER_MAX_LENGTH,
   STUCK_ON_MAX_LENGTH,
-} from "../lib/session-input-limits.js";
+} from "../../shared/session/session-input-limits.js";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -61,6 +61,25 @@ type RecentSessionRow = {
 type StreamAttemptResult = {
   assistantText: string;
   structured: StructuredChatResponse;
+};
+
+type RecentSessionsQueryResult = {
+  data: RecentSessionRow[] | null;
+  error: { message?: string } | null;
+};
+
+type RecentSessionsClient = {
+  from(table: "sessions"): {
+    select(columns: string): {
+      eq(column: "user_id", value: string): {
+        neq(column: "id", value: string): {
+          order(column: "created_at", options: { ascending: boolean }): {
+            limit(limit: number): PromiseLike<RecentSessionsQueryResult>;
+          };
+        };
+      };
+    };
+  };
 };
 
 type NormalizedRequestBodyResult =
@@ -227,7 +246,7 @@ export async function handleChatRequest(request: Request) {
   }
 
   const recentSessions = await loadRecentSessions(
-    scopedClient,
+    scopedClient as unknown as RecentSessionsClient,
     user.id,
     normalizedRequest.sessionId,
   );
@@ -443,7 +462,7 @@ async function streamAnthropicResponse(input: {
 }
 
 async function loadRecentSessions(
-  client: ReturnType<typeof createClient>,
+  client: RecentSessionsClient,
   userId: string,
   currentSessionId: string,
 ) {

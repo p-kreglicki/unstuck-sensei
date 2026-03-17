@@ -4,7 +4,7 @@ import {
   type EnergyLevel,
   type SessionSource,
   type SessionSummary,
-} from "../session-flow.js";
+} from "./session-protocol.js";
 
 type BuildSessionPromptInput = {
   clarifyingAnswer?: string;
