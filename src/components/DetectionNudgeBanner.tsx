@@ -1,27 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useDetection } from "../hooks/useDetection";
-
-function formatCommandError(error: unknown) {
-  if (typeof error === "string") {
-    return error;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-
-  return "Command failed.";
-}
+import { formatError } from "../lib/formatError";
 
 export function DetectionNudgeBanner() {
   const navigate = useNavigate();
@@ -40,7 +20,7 @@ export function DetectionNudgeBanner() {
     try {
       await dismissNudge();
     } catch (nextError) {
-      setError(formatCommandError(nextError));
+      setError(formatError(nextError));
     } finally {
       setIsSubmitting(false);
     }
@@ -58,7 +38,7 @@ export function DetectionNudgeBanner() {
         },
       });
     } catch (nextError) {
-      setError(formatCommandError(nextError));
+      setError(formatError(nextError));
     } finally {
       setIsSubmitting(false);
     }
