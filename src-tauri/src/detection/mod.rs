@@ -2,6 +2,7 @@ pub mod platform;
 
 use std::{
     collections::{HashSet, VecDeque},
+    sync::{Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 
@@ -207,6 +208,48 @@ impl DetectionState {
 
     pub fn status_response(&self) -> DetectionStatusResponse {
         self.status_response_at(Instant::now())
+    }
+
+    pub(crate) fn recover_after_poison(&mut self, now: Instant) {
+        let signed_in = self.signed_in;
+        let enabled = self.enabled;
+        let sensitivity = self.sensitivity;
+        let app_foregrounded = self.app_foregrounded;
+        let last_foreground_bundle_id = self.last_foreground_bundle_id.clone();
+        let last_idle_seconds = self.last_idle_seconds;
+        let notifications_today = self.notifications_today;
+        let today_date = self.today_date;
+
+        *self = Self::new();
+        self.last_tick = now;
+        self.signed_in = signed_in;
+        self.enabled = enabled;
+        self.sensitivity = sensitivity;
+        self.app_foregrounded = app_foregrounded;
+        self.last_foreground_bundle_id = last_foreground_bundle_id;
+        self.last_idle_seconds = last_idle_seconds;
+        self.notifications_today = notifications_today;
+        self.today_date = today_date;
+
+        if signed_in {
+            self.suppression_reasons
+                .remove(&SuppressionReason::SignedOut);
+        }
+
+        self.refresh_dynamic_suppression_reasons();
+
+        if !signed_in || !enabled {
+            let _ = self.disable(now);
+            return;
+        }
+
+        let event = if self.has_runtime_suppression() {
+            TransitionEvent::EnabledWhileSuppressed
+        } else {
+            TransitionEvent::Enabled
+        };
+
+        let _ = self.apply_transition(event, now);
     }
 
     #[cfg(debug_assertions)]
@@ -597,6 +640,29 @@ impl DetectionState {
     }
 }
 
+pub(crate) fn recover_detection_state_lock<'a>(
+    mutex: &'a Mutex<DetectionState>,
+    context: &str,
+) -> MutexGuard<'a, DetectionState> {
+    match mutex.lock() {
+        Ok(state) => state,
+        Err(error) => {
+            let mut state = error.into_inner();
+            state.recover_after_poison(Instant::now());
+            mutex.clear_poison();
+            log_lock_recovery(context);
+            state
+        }
+    }
+}
+
+fn log_lock_recovery(context: &str) {
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[detection] recovered poisoned detection state lock in {context}; cleared volatile runtime state"
+    );
+}
+
 fn is_meeting_app_bundle_id(bundle_id: &str) -> bool {
     MEETING_APP_BUNDLE_IDS.contains(&bundle_id)
 }
@@ -729,6 +795,7 @@ impl From<&DetectionState> for DetectionDebugResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{panic::AssertUnwindSafe, sync::Mutex};
 
     fn signed_in_state(status: DetectionStatus) -> DetectionState {
         let mut state = DetectionState::new();
@@ -934,6 +1001,89 @@ mod tests {
         assert_eq!(state.cooldown_remaining, Some(Duration::from_secs(30)));
         assert_eq!(state.last_stuck_detected_at, None);
         assert_state_changed(&effects, DetectionStatus::Cooldown, false);
+    }
+
+    #[test]
+    fn recover_detection_state_lock_rebuilds_clean_active_state() {
+        let now = Instant::now();
+        let mutex = Mutex::new(signed_in_state(DetectionStatus::Paused));
+
+        let panic_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut state = mutex.lock().unwrap();
+            state.sensitivity = Sensitivity::High;
+            state.pause_remaining = Some(Duration::from_secs(90));
+            state.cooldown_remaining = Some(Duration::from_secs(45));
+            state.last_idle_seconds = 17;
+            state.notifications_today = 3;
+            state.app_switches.push_back(now);
+            state.last_stuck_detected_at = Some(now);
+            panic!("poison detection state");
+        }));
+
+        assert!(panic_result.is_err());
+
+        let state = recover_detection_state_lock(&mutex, "test");
+
+        assert_eq!(state.status, DetectionStatus::Active);
+        assert_eq!(state.sensitivity, Sensitivity::High);
+        assert_eq!(state.last_idle_seconds, 17);
+        assert_eq!(state.notifications_today, 3);
+        assert_eq!(state.pause_remaining, None);
+        assert_eq!(state.cooldown_remaining, None);
+        assert_eq!(state.notification_remaining, None);
+        assert_eq!(state.last_stuck_detected_at, None);
+        assert!(state.app_switches.is_empty());
+    }
+
+    #[test]
+    fn recover_detection_state_lock_restores_runtime_suppression() {
+        let mutex = Mutex::new(signed_in_state(DetectionStatus::Active));
+
+        let panic_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut state = mutex.lock().unwrap();
+            state.app_foregrounded = true;
+            panic!("poison detection state");
+        }));
+
+        assert!(panic_result.is_err());
+
+        let state = recover_detection_state_lock(&mutex, "test");
+
+        assert_eq!(state.status, DetectionStatus::Suppressed);
+        assert!(state
+            .suppression_reasons
+            .contains(&SuppressionReason::AppForegrounded));
+    }
+
+    #[test]
+    fn recover_detection_state_lock_clears_mutex_poison_after_recovery() {
+        let now = Instant::now();
+        let mutex = Mutex::new(signed_in_state(DetectionStatus::Paused));
+
+        let panic_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut state = mutex.lock().unwrap();
+            state.pause_remaining = Some(Duration::from_secs(90));
+            panic!("poison detection state");
+        }));
+
+        assert!(panic_result.is_err());
+        assert!(mutex.is_poisoned());
+
+        {
+            let mut state = recover_detection_state_lock(&mutex, "test");
+            state.pause_remaining = Some(Duration::from_secs(12));
+            state.app_switches.push_back(now);
+        }
+
+        assert!(!mutex.is_poisoned());
+
+        let state = mutex
+            .lock()
+            .expect("poison should be cleared after the first recovery");
+
+        assert_eq!(state.status, DetectionStatus::Active);
+        assert_eq!(state.pause_remaining, Some(Duration::from_secs(12)));
+        assert_eq!(state.app_switches.len(), 1);
     }
 
     #[test]

@@ -41,7 +41,10 @@ use objc2_foundation::NSNotification;
 use tauri::{AppHandle, Manager, Wry};
 
 #[cfg(target_os = "macos")]
-use crate::{detection::DetectionState, execute_detection_effects};
+use crate::{
+    detection::{recover_detection_state_lock, DetectionState},
+    execute_detection_effects,
+};
 
 #[cfg(target_os = "macos")]
 const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -56,8 +59,6 @@ const SYSTEM_UI_BUNDLE_IDS: &[&str] = &[
 
 #[cfg(target_os = "macos")]
 static IDLE_POLL_ERROR_REPORTED: AtomicBool = AtomicBool::new(false);
-#[cfg(target_os = "macos")]
-static DETECTION_STATE_LOCK_POISONED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "macos")]
 thread_local! {
@@ -219,16 +220,9 @@ fn with_detection_state<T>(
     app: &AppHandle<Wry>,
     handler: impl FnOnce(&mut DetectionState) -> T,
 ) -> Option<T> {
-    let state = app.state::<Mutex<DetectionState>>();
-    let lock = state.lock();
-
-    match lock {
-        Ok(mut state) => Some(handler(&mut state)),
-        Err(_) => {
-            log_lock_poisoned();
-            None
-        }
-    }
+    let detection_state = app.state::<Mutex<DetectionState>>();
+    let mut state = recover_detection_state_lock(detection_state.inner(), "platform");
+    Some(handler(&mut state))
 }
 
 #[cfg(target_os = "macos")]
@@ -307,13 +301,6 @@ fn log_idle_poll_error(error: &str) {
 fn clear_idle_poll_error() {
     if IDLE_POLL_ERROR_REPORTED.swap(false, Ordering::Relaxed) {
         error_log("idle polling recovered");
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn log_lock_poisoned() {
-    if !DETECTION_STATE_LOCK_POISONED.swap(true, Ordering::Relaxed) {
-        error_log("detection state lock is poisoned");
     }
 }
 
