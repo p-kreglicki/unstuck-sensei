@@ -53,6 +53,23 @@ type RecentSessionRow = {
   stuck_on: string | null;
 };
 
+type LoadRecentSessionsQuery = {
+  eq(column: "user_id", value: string): LoadRecentSessionsQuery;
+  neq(column: "id", value: string): LoadRecentSessionsQuery;
+  order(
+    column: "created_at",
+    options: { ascending: boolean },
+  ): LoadRecentSessionsQuery;
+  limit(limit: number): PromiseLike<{
+    data: RecentSessionRow[] | null;
+    error: { message?: string } | null;
+  }>;
+};
+
+type LoadRecentSessionsRelation = {
+  select(columns: "created_at, feedback, steps, stuck_on"): LoadRecentSessionsQuery;
+};
+
 type StreamAttemptResult = {
   assistantText: string;
   structured: StructuredChatResponse;
@@ -195,7 +212,7 @@ export async function handleChatRequest(request: Request) {
   }
 
   const recentSessions = await loadRecentSessions(
-    scopedClient,
+    scopedClient.from("sessions") as unknown as LoadRecentSessionsRelation,
     user.id,
     normalizedRequest.sessionId,
   );
@@ -384,12 +401,11 @@ async function streamAnthropicResponse(input: {
 }
 
 async function loadRecentSessions(
-  client: { from(table: string): any },
+  sessions: LoadRecentSessionsRelation,
   userId: string,
   currentSessionId: string,
 ) {
-  const { data, error } = await client
-    .from("sessions")
+  const { data, error } = await sessions
     .select("created_at, feedback, steps, stuck_on")
     .eq("user_id", userId)
     .neq("id", currentSessionId)
@@ -400,7 +416,7 @@ async function loadRecentSessions(
     return [];
   }
 
-  return (data as RecentSessionRow[]).map((session) => toSessionSummary(session));
+  return data.map((session) => toSessionSummary(session));
 }
 
 export async function consumeRateLimit(
