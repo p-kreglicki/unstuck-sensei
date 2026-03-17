@@ -26,11 +26,16 @@ const ANTHROPIC_VERSION = "2023-06-01";
 const MAX_RECENT_SESSIONS = 3;
 const MAX_STEPS = 5;
 const MAX_TOKENS = 700;
-const CORS_HEADERS = {
+const BASE_CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
   "Access-Control-Allow-Methods": "OPTIONS, POST",
-  "Access-Control-Allow-Origin": "*",
+  Vary: "Origin",
 };
+const ALLOWED_CORS_ORIGINS = new Set([
+  "http://localhost:1420",
+  "https://tauri.localhost",
+  "tauri://localhost",
+]);
 
 type NormalizedRequest = ChatRequestBody & {
   authorizationToken: string;
@@ -51,23 +56,6 @@ type RecentSessionRow = {
   feedback: "no" | "somewhat" | "yes" | null;
   steps: unknown;
   stuck_on: string | null;
-};
-
-type LoadRecentSessionsQuery = {
-  eq(column: "user_id", value: string): LoadRecentSessionsQuery;
-  neq(column: "id", value: string): LoadRecentSessionsQuery;
-  order(
-    column: "created_at",
-    options: { ascending: boolean },
-  ): LoadRecentSessionsQuery;
-  limit(limit: number): PromiseLike<{
-    data: RecentSessionRow[] | null;
-    error: { message?: string } | null;
-  }>;
-};
-
-type LoadRecentSessionsRelation = {
-  select(columns: "created_at, feedback, steps, stuck_on"): LoadRecentSessionsQuery;
 };
 
 type StreamAttemptResult = {
@@ -104,7 +92,7 @@ export default {
   async fetch(request: Request) {
     if (request.method === "OPTIONS") {
       return new Response(null, {
-        headers: CORS_HEADERS,
+        headers: corsHeaders(request),
         status: 204,
       });
     }
@@ -112,6 +100,7 @@ export default {
     if (request.method !== "POST") {
       return jsonResponse(
         { error: "Method not allowed." },
+        request,
         {
           headers: {
             Allow: "OPTIONS, POST",
@@ -126,7 +115,7 @@ export default {
 };
 
 export async function handleChatRequest(request: Request) {
-  const environment = getRequiredEnvironment();
+  const environment = getRequiredEnvironment(request);
 
   if ("response" in environment) {
     return environment.response;
@@ -157,6 +146,7 @@ export async function handleChatRequest(request: Request) {
   if (authError || !user) {
     return jsonResponse(
       { error: "Unauthorized. Sign in again and retry." },
+      request,
       { status: 401 },
     );
   }
@@ -186,6 +176,7 @@ export async function handleChatRequest(request: Request) {
 
     return jsonResponse(
       { error: "Unable to start the chat right now." },
+      request,
       { status: 500 },
     );
   }
@@ -193,6 +184,7 @@ export async function handleChatRequest(request: Request) {
   if (rateLimitStatus === "unauthorized") {
     return jsonResponse(
       { error: "Unauthorized. Sign in again and retry." },
+      request,
       { status: 401 },
     );
   }
@@ -200,6 +192,7 @@ export async function handleChatRequest(request: Request) {
   if (rateLimitStatus === "invalid_session") {
     return jsonResponse(
       { error: "Save the task first, then try again." },
+      request,
       { status: 400 },
     );
   }
@@ -207,12 +200,13 @@ export async function handleChatRequest(request: Request) {
   if (rateLimitStatus === "rate_limited") {
     return jsonResponse(
       { error: "Rate limit reached. Take a breath, then try again soon." },
+      request,
       { status: 429 },
     );
   }
 
   const recentSessions = await loadRecentSessions(
-    scopedClient.from("sessions") as unknown as LoadRecentSessionsRelation,
+    scopedClient,
     user.id,
     normalizedRequest.sessionId,
   );
@@ -258,7 +252,7 @@ export async function handleChatRequest(request: Request) {
 
   return new Response(stream, {
     headers: {
-      ...CORS_HEADERS,
+      ...corsHeaders(request),
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -401,11 +395,12 @@ async function streamAnthropicResponse(input: {
 }
 
 async function loadRecentSessions(
-  sessions: LoadRecentSessionsRelation,
+  client: ReturnType<typeof createClient>,
   userId: string,
   currentSessionId: string,
 ) {
-  const { data, error } = await sessions
+  const { data, error } = await client
+    .from("sessions")
     .select("created_at, feedback, steps, stuck_on")
     .eq("user_id", userId)
     .neq("id", currentSessionId)
@@ -540,6 +535,7 @@ async function normalizeRequest(
     return {
       response: jsonResponse(
         { error: "Missing Authorization bearer token." },
+        request,
         { status: 401 },
       ),
     };
@@ -553,6 +549,7 @@ async function normalizeRequest(
     return {
       response: jsonResponse(
         { error: "Request body must be valid JSON." },
+        request,
         { status: 400 },
       ),
     };
@@ -564,6 +561,7 @@ async function normalizeRequest(
     return {
       response: jsonResponse(
         { error: normalizedBody.message },
+        request,
         { status: 400 },
       ),
     };
@@ -686,7 +684,9 @@ function toSessionSummary(session: RecentSessionRow): SessionSummary {
   };
 }
 
-function getRequiredEnvironment():
+function getRequiredEnvironment(
+  request: Request,
+):
   | {
       anthropicApiKey: string;
       anthropicModel: string;
@@ -708,6 +708,7 @@ function getRequiredEnvironment():
     return {
       response: jsonResponse(
         { error: "Server configuration is incomplete." },
+        request,
         { status: 500 },
       ),
     };
@@ -829,14 +830,28 @@ function logAnthropicRequestError(
   });
 }
 
+function corsHeaders(request: Request) {
+  const origin = request.headers.get("origin");
+
+  if (!origin || !ALLOWED_CORS_ORIGINS.has(origin)) {
+    return BASE_CORS_HEADERS;
+  }
+
+  return {
+    ...BASE_CORS_HEADERS,
+    "Access-Control-Allow-Origin": origin,
+  };
+}
+
 function jsonResponse(
   body: Record<string, unknown>,
+  request: Request,
   init: ResponseInit,
 ) {
   return new Response(JSON.stringify(body), {
     ...init,
     headers: {
-      ...CORS_HEADERS,
+      ...corsHeaders(request),
       "content-type": "application/json; charset=utf-8",
       ...init.headers,
     },

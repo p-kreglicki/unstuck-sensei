@@ -20,6 +20,7 @@ import {
 import {
   formatSessionReminder,
   isEnergyLevel,
+  isSessionSource,
   moveStep,
   type EnergyLevel,
   type SessionSource,
@@ -256,7 +257,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
 
       const structured = await chat.sendInitial({
         energyLevel,
-        source: (nextSession.source as SessionSource | null) ?? requestedSource,
+        source: nextSession.source ?? requestedSource,
         stuckOn,
       });
 
@@ -298,7 +299,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
       const structured = await chat.sendClarification({
         clarifyingAnswer: answer,
         energyLevel,
-        source: (nextSession.source as SessionSource | null) ?? requestedSource,
+        source: nextSession.source ?? requestedSource,
         stuckOn: nextSession.stuck_on ?? stuckOnInput.trim(),
       });
 
@@ -326,7 +327,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     try {
       const structured = await chat.retry({
         energyLevel,
-        source: (sessionRow.source as SessionSource | null) ?? requestedSource,
+        source: sessionRow.source ?? requestedSource,
         stuckOn,
       });
 
@@ -435,14 +436,28 @@ function deriveStage(input: {
   return "compose";
 }
 
-function readRequestedSource(state: unknown): SessionSource {
-  const candidate = state as SessionLocationState | null;
+function isSessionLocationState(value: unknown): value is SessionLocationState {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
 
-  if (candidate?.sessionSource === "detection") {
+  if (!("sessionSource" in value)) {
+    return true;
+  }
+
+  return value.sessionSource === undefined || isSessionSource(value.sessionSource);
+}
+
+function readRequestedSource(state: unknown): SessionSource {
+  if (!isSessionLocationState(state)) {
+    return "manual";
+  }
+
+  if (state.sessionSource === "detection") {
     return "detection";
   }
 
-  if (candidate?.sessionSource === "email") {
+  if (state.sessionSource === "email") {
     return "email";
   }
 

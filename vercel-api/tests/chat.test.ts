@@ -6,7 +6,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: createClientMock,
 }));
 
-import {
+import chatRoute, {
   consumeRateLimit,
   handleChatRequest,
   normalizeAnthropicError,
@@ -51,6 +51,61 @@ describe("chat route helpers", () => {
     );
 
     expect(response.status).toBe(401);
+  });
+
+  it("reflects allowed app origins in preflight responses", async () => {
+    const response = await chatRoute.fetch(
+      new Request("https://example.com/api/chat", {
+        headers: {
+          Origin: "http://localhost:1420",
+        },
+        method: "OPTIONS",
+      }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(
+      "http://localhost:1420",
+    );
+    expect(response.headers.get("Vary")).toBe("Origin");
+  });
+
+  it("does not allow unknown origins in preflight responses", async () => {
+    const response = await chatRoute.fetch(
+      new Request("https://example.com/api/chat", {
+        headers: {
+          Origin: "https://evil.example",
+        },
+        method: "OPTIONS",
+      }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("includes the allowlisted origin on error responses", async () => {
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: "session-1",
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://tauri.localhost",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(
+      "https://tauri.localhost",
+    );
   });
 
   it("returns 500 when required env is missing", async () => {
