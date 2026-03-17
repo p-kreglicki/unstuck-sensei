@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { parseSseFrames } from "../lib/chat-sse";
 import { supabase } from "../lib/supabase";
 import {
@@ -9,22 +9,16 @@ import {
   type StructuredChatResponse,
 } from "../lib/session-flow";
 
-type ChatStage = "completed" | "error" | "idle" | "streaming";
-
 export type ChatState = {
   error: string | null;
-  finalAssistantText: string;
   isStreaming: boolean;
-  stage: ChatStage;
   streamingText: string;
   structuredResult: StructuredChatResponse | null;
 };
 
 const defaultState: ChatState = {
   error: null,
-  finalAssistantText: "",
   isStreaming: false,
-  stage: "idle",
   streamingText: "",
   structuredResult: null,
 };
@@ -44,6 +38,56 @@ type SendChatInput = {
 export function useChat({ sessionId }: UseChatOptions) {
   const [state, setState] = useState<ChatState>(defaultState);
   const abortRef = useRef<AbortController | null>(null);
+  const pendingStreamingTextRef = useRef("");
+  const streamingFrameRef = useRef<number | null>(null);
+  const streamingTextRef = useRef(defaultState.streamingText);
+
+  useEffect(() => {
+    return () => {
+      if (streamingFrameRef.current !== null) {
+        cancelAnimationFrameCompat(streamingFrameRef.current);
+      }
+
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  function applyPendingStreamingText() {
+    if (pendingStreamingTextRef.current.length === 0) {
+      return;
+    }
+
+    const nextStreamingText =
+      streamingTextRef.current + pendingStreamingTextRef.current;
+
+    pendingStreamingTextRef.current = "";
+    streamingTextRef.current = nextStreamingText;
+
+    setState((current) => ({
+      ...current,
+      streamingText: nextStreamingText,
+    }));
+  }
+
+  function flushStreamingText() {
+    if (streamingFrameRef.current !== null) {
+      cancelAnimationFrameCompat(streamingFrameRef.current);
+      streamingFrameRef.current = null;
+    }
+
+    applyPendingStreamingText();
+  }
+
+  function scheduleStreamingTextFlush() {
+    if (streamingFrameRef.current !== null) {
+      return;
+    }
+
+    streamingFrameRef.current = requestAnimationFrameCompat(() => {
+      streamingFrameRef.current = null;
+      applyPendingStreamingText();
+    });
+  }
 
   async function runChatRequest(
     input: SendChatInput,
@@ -69,12 +113,17 @@ export function useChat({ sessionId }: UseChatOptions) {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    pendingStreamingTextRef.current = "";
+    streamingTextRef.current = "";
+
+    if (streamingFrameRef.current !== null) {
+      cancelAnimationFrameCompat(streamingFrameRef.current);
+      streamingFrameRef.current = null;
+    }
 
     setState({
       error: null,
-      finalAssistantText: "",
       isStreaming: true,
-      stage: "streaming",
       streamingText: "",
       structuredResult: null,
     });
@@ -125,10 +174,8 @@ export function useChat({ sessionId }: UseChatOptions) {
             const payload = parseJsonPayload<{ text: string }>(event.data);
 
             if (payload?.text) {
-              setState((current) => ({
-                ...current,
-                streamingText: current.streamingText + payload.text,
-              }));
+              pendingStreamingTextRef.current += payload.text;
+              scheduleStreamingTextFlush();
             }
 
             continue;
@@ -141,10 +188,10 @@ export function useChat({ sessionId }: UseChatOptions) {
               throw new Error("The server returned an invalid coaching result.");
             }
 
+            flushStreamingText();
             structuredResult = payload;
             setState((current) => ({
               ...current,
-              finalAssistantText: payload.assistantText,
               structuredResult: payload,
             }));
             continue;
@@ -153,10 +200,10 @@ export function useChat({ sessionId }: UseChatOptions) {
           if (event.event === "error") {
             const payload = parseJsonPayload<{ message?: string }>(event.data);
             errorMessage = payload?.message ?? "The coaching stream failed.";
+            flushStreamingText();
             setState((current) => ({
               ...current,
               error: errorMessage,
-              stage: "error",
             }));
             continue;
           }
@@ -168,6 +215,7 @@ export function useChat({ sessionId }: UseChatOptions) {
       }
 
       if (!structuredResult) {
+        flushStreamingText();
         throw new Error(
           errorMessage ?? "The coaching stream ended before a result was returned.",
         );
@@ -176,9 +224,6 @@ export function useChat({ sessionId }: UseChatOptions) {
       setState((current) => ({
         ...current,
         error: null,
-        finalAssistantText: structuredResult.assistantText,
-        isStreaming: false,
-        stage: "completed",
         structuredResult,
       }));
 
@@ -190,11 +235,10 @@ export function useChat({ sessionId }: UseChatOptions) {
       ) {
         const message = "The coaching request was canceled.";
 
+        flushStreamingText();
         setState((current) => ({
           ...current,
           error: message,
-          isStreaming: false,
-          stage: "error",
         }));
 
         throw new Error(message);
@@ -205,16 +249,16 @@ export function useChat({ sessionId }: UseChatOptions) {
           ? error.message
           : "The coaching request failed.";
 
+      flushStreamingText();
       setState((current) => ({
         ...current,
         error: message,
-        isStreaming: false,
-        stage: "error",
       }));
 
       throw new Error(message);
     } finally {
       abortRef.current = null;
+      flushStreamingText();
       setState((current) => ({
         ...current,
         isStreaming: false,
@@ -278,4 +322,21 @@ function parseJsonPayload<T>(value: string): T | null {
   } catch {
     return null;
   }
+}
+
+function requestAnimationFrameCompat(callback: FrameRequestCallback) {
+  if (typeof globalThis.requestAnimationFrame === "function") {
+    return globalThis.requestAnimationFrame(callback);
+  }
+
+  return globalThis.setTimeout(() => callback(Date.now()), 16);
+}
+
+function cancelAnimationFrameCompat(handle: number) {
+  if (typeof globalThis.cancelAnimationFrame === "function") {
+    globalThis.cancelAnimationFrame(handle);
+    return;
+  }
+
+  globalThis.clearTimeout(handle);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router";
 import { ClarifyingQuestion } from "../components/session/ClarifyingQuestion";
 import { EnergySelector } from "../components/session/EnergySelector";
@@ -154,10 +154,23 @@ export function Session() {
       ? "The nudge noticed you were bouncing around. Name the task you were dodging."
       : null;
   const reminder = formatSessionReminder(recentSessions[0] ?? null);
-  const renderedAssistantText =
+  const transcriptRows = useMemo(
+    () =>
+      messages.map((message) => ({
+        content: message.content,
+        id: message.id,
+        role: message.role,
+      })),
+    [messages],
+  );
+  const streamingTranscriptRow =
     chat.state.isStreaming && chat.state.streamingText.length > 0
-      ? chat.state.streamingText
-      : chat.state.structuredResult?.assistantText ?? null;
+      ? {
+          content: chat.state.streamingText,
+          id: "streaming",
+          role: "assistant" as const,
+        }
+      : null;
 
   async function handleSaveStuckTask() {
     if (!user?.id) {
@@ -364,30 +377,6 @@ export function Session() {
     setConfirmed(false);
   }
 
-  const transcript = useMemo(() => {
-    if (messages.length === 0 && !renderedAssistantText) {
-      return [];
-    }
-
-    const rows = messages.map((message) => ({
-      content: message.content,
-      id: message.id,
-      role: message.role,
-      transient: false,
-    }));
-
-    if (chat.state.isStreaming && chat.state.streamingText.length > 0) {
-      rows.push({
-        content: chat.state.streamingText,
-        id: "streaming",
-        role: "assistant" as const,
-        transient: true,
-      });
-    }
-
-    return rows;
-  }, [chat.state.isStreaming, chat.state.streamingText, messages]);
-
   return (
     <div className="space-y-5">
       {statusMessage || chat.state.error ? (
@@ -420,7 +409,12 @@ export function Session() {
             />
           ) : null}
 
-          {transcript.length > 0 ? <TranscriptCard rows={transcript} /> : null}
+          {transcriptRows.length > 0 || streamingTranscriptRow ? (
+            <TranscriptCard
+              rows={transcriptRows}
+              streamingRow={streamingTranscriptRow}
+            />
+          ) : null}
 
           {currentStage === "clarifying" && sessionRow?.clarifying_question ? (
             <ClarifyingQuestion
@@ -511,13 +505,10 @@ function LoadingCard() {
 
 function TranscriptCard({
   rows,
+  streamingRow,
 }: {
-  rows: Array<{
-    content: string;
-    id: string;
-    role: "assistant" | "user";
-    transient: boolean;
-  }>;
+  rows: TranscriptRow[];
+  streamingRow: TranscriptRow | null;
 }) {
   return (
     <section className="rounded-[28px] border border-white/10 bg-white/5 p-5">
@@ -525,31 +516,61 @@ function TranscriptCard({
         Conversation
       </p>
       <div className="mt-4 space-y-3">
-        {rows.map((row) => (
-          <div
-            key={row.id}
-            className={[
-              "rounded-3xl px-4 py-4 text-sm leading-6",
-              row.role === "assistant"
-                ? "border border-teal-300/15 bg-teal-300/10 text-teal-50"
-                : "border border-white/10 bg-slate-950/70 text-slate-100",
-            ].join(" ")}
-          >
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <span className="text-[11px] uppercase tracking-[0.24em] text-slate-400">
-                {row.role === "assistant" ? "Sensei" : "You"}
-              </span>
-              {row.transient ? (
-                <span className="text-[11px] uppercase tracking-[0.24em] text-teal-200/70">
-                  Streaming
-                </span>
-              ) : null}
-            </div>
-            <p className="whitespace-pre-wrap">{row.content}</p>
-          </div>
-        ))}
+        <HistoricalTranscriptRows rows={rows} />
+        {streamingRow ? <TranscriptBubble row={streamingRow} transient /> : null}
       </div>
     </section>
+  );
+}
+
+type TranscriptRow = {
+  content: string;
+  id: string;
+  role: "assistant" | "user";
+};
+
+const HistoricalTranscriptRows = memo(function HistoricalTranscriptRows({
+  rows,
+}: {
+  rows: TranscriptRow[];
+}) {
+  return (
+    <>
+      {rows.map((row) => (
+        <TranscriptBubble key={row.id} row={row} transient={false} />
+      ))}
+    </>
+  );
+});
+
+function TranscriptBubble({
+  row,
+  transient,
+}: {
+  row: TranscriptRow;
+  transient: boolean;
+}) {
+  return (
+    <div
+      className={[
+        "rounded-3xl px-4 py-4 text-sm leading-6",
+        row.role === "assistant"
+          ? "border border-teal-300/15 bg-teal-300/10 text-teal-50"
+          : "border border-white/10 bg-slate-950/70 text-slate-100",
+      ].join(" ")}
+    >
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-[11px] uppercase tracking-[0.24em] text-slate-400">
+          {row.role === "assistant" ? "Sensei" : "You"}
+        </span>
+        {transient ? (
+          <span className="text-[11px] uppercase tracking-[0.24em] text-teal-200/70">
+            Streaming
+          </span>
+        ) : null}
+      </div>
+      <p className="whitespace-pre-wrap">{row.content}</p>
+    </div>
   );
 }
 

@@ -49,9 +49,7 @@ describe("Session", () => {
       sendInitial: vi.fn(),
       state: {
         error: null,
-        finalAssistantText: "",
         isStreaming: false,
-        stage: "idle",
         streamingText: "",
         structuredResult: null,
       },

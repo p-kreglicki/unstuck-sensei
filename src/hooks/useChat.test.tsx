@@ -83,12 +83,13 @@ describe("useChat", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.state.stage).toBe("completed");
+      expect(result.current.state.isStreaming).toBe(false);
+      expect(result.current.state.structuredResult).toEqual(response);
     });
 
     expect(response.kind).toBe("steps");
     expect(result.current.state.streamingText).toContain("Let’s keep this tiny.");
-    expect(result.current.state.structuredResult).toEqual(response);
+    expect(result.current.state.error).toBeNull();
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/chat"),
       expect.objectContaining({
@@ -115,12 +116,50 @@ describe("useChat", () => {
     ).rejects.toThrow("ended before a result was returned");
 
     await waitFor(() => {
-      expect(result.current.state.stage).toBe("error");
+      expect(result.current.state.isStreaming).toBe(false);
+      expect(result.current.state.error).toMatch(/ended before a result/);
     });
 
     expect(result.current.state.streamingText).toContain(
       "Okay, let’s make this smaller.",
     );
-    expect(result.current.state.error).toMatch(/ended before a result/);
+    expect(result.current.state.structuredResult).toBeNull();
+  });
+
+  it("buffers multiple deltas behind a single animation-frame flush", async () => {
+    const requestAnimationFrameMock = vi.fn<(callback: FrameRequestCallback) => number>();
+    const cancelAnimationFrameMock = vi.fn<(handle: number) => void>();
+
+    requestAnimationFrameMock.mockImplementation(() => 1);
+
+    vi.stubGlobal("requestAnimationFrame", requestAnimationFrameMock);
+    vi.stubGlobal("cancelAnimationFrame", cancelAnimationFrameMock);
+    vi.mocked(fetch).mockResolvedValue(
+      createStreamingResponse([
+        encodeSseEvent("text-delta", { text: "First chunk. " }),
+        encodeSseEvent("text-delta", { text: "Second chunk." }),
+        encodeSseEvent("structured", {
+          assistantText: "First chunk. Second chunk.",
+          kind: "steps",
+          steps: [{ id: "step-1", text: "Ship it." }],
+        }),
+        encodeSseEvent("done", { ok: true }),
+      ]),
+    );
+
+    const { result } = renderHook(() => useChat({ sessionId: "session-3" }));
+
+    await result.current.sendInitial({
+      energyLevel: "high",
+      source: "manual",
+      stuckOn: "Finishing the launch note",
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.streamingText).toBe("First chunk. Second chunk.");
+    });
+
+    expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1);
+    expect(cancelAnimationFrameMock).toHaveBeenCalledWith(1);
   });
 });
