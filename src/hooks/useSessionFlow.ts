@@ -53,6 +53,34 @@ type UseSessionFlowOptions = {
   locationState: unknown;
 };
 
+async function persistSessionPatch(input: {
+  currentSession: SessionRow;
+  patch: Parameters<typeof updateSessionDraft>[1];
+  userMessage?: {
+    content: string;
+    role: "user";
+  };
+}) {
+  const nextSessionPromise = updateSessionDraft(input.currentSession.id, input.patch);
+  const userMessagePromise = input.userMessage
+    ? insertConversationMessage({
+        content: input.userMessage.content,
+        role: input.userMessage.role,
+        sessionId: input.currentSession.id,
+      })
+    : Promise.resolve(null);
+
+  const [nextSession, userMessage] = await Promise.all([
+    nextSessionPromise,
+    userMessagePromise,
+  ]);
+
+  return {
+    nextSession,
+    userMessage,
+  };
+}
+
 export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
   const { user } = useAuth();
   const requestedSource = readRequestedSource(locationState);
@@ -241,17 +269,23 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     setStatusMessage(null);
 
     try {
-      const nextSession = await updateSessionDraft(sessionRow.id, {
-        energy_level: energyLevel,
+      const { nextSession, userMessage } = await persistSessionPatch({
+        currentSession: sessionRow,
+        patch: {
+          energy_level: energyLevel,
+        },
+        userMessage:
+          messages.length === 0
+            ? {
+                content: stuckOn,
+                role: "user",
+              }
+            : undefined,
       });
+
       setSessionRow(nextSession);
 
-      if (messages.length === 0) {
-        const userMessage = await insertConversationMessage({
-          content: stuckOn,
-          role: "user",
-          sessionId: sessionRow.id,
-        });
+      if (userMessage) {
         setMessages((current) => [...current, userMessage]);
       }
 
@@ -284,17 +318,22 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     setStatusMessage(null);
 
     try {
-      const nextSession = await updateSessionDraft(sessionRow.id, {
-        clarifying_answer: answer,
+      const { nextSession, userMessage } = await persistSessionPatch({
+        currentSession: sessionRow,
+        patch: {
+          clarifying_answer: answer,
+        },
+        userMessage: {
+          content: answer,
+          role: "user",
+        },
       });
+
       setSessionRow(nextSession);
 
-      const userMessage = await insertConversationMessage({
-        content: answer,
-        role: "user",
-        sessionId: sessionRow.id,
-      });
-      setMessages((current) => [...current, userMessage]);
+      if (userMessage) {
+        setMessages((current) => [...current, userMessage]);
+      }
 
       const structured = await chat.sendClarification({
         clarifyingAnswer: answer,
@@ -362,21 +401,24 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     currentSession: SessionRow,
     structured: StructuredChatResponse,
   ) {
-    const assistantMessage = await insertConversationMessage({
+    const nextSessionPromise =
+      structured.kind === "clarifying_question"
+        ? updateSessionDraft(currentSession.id, {
+            clarifying_question: structured.question,
+            steps: null,
+          })
+        : updateSessionDraft(currentSession.id, {
+            steps: structured.steps,
+          });
+    const assistantMessagePromise = insertConversationMessage({
       content: structured.assistantText,
       role: "assistant",
       sessionId: currentSession.id,
     });
-
-    const nextSession =
-      structured.kind === "clarifying_question"
-        ? await updateSessionDraft(currentSession.id, {
-            clarifying_question: structured.question,
-            steps: null,
-          })
-        : await updateSessionDraft(currentSession.id, {
-            steps: structured.steps,
-          });
+    const [nextSession, assistantMessage] = await Promise.all([
+      nextSessionPromise,
+      assistantMessagePromise,
+    ]);
 
     setMessages((current) => [...current, assistantMessage]);
     setSessionRow(nextSession);
