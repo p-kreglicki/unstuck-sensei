@@ -1,5 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useAuth } from "../hooks/useAuth";
 import { type DetectionState, useDetection } from "../hooks/useDetection";
@@ -38,11 +38,21 @@ function formatInvokeError(error: unknown) {
   return "Command failed.";
 }
 
+function isDetectionStateResult(
+  value: DetectionDebug | DetectionState | null,
+): value is DetectionState {
+  return !!value && "nudgeActive" in value;
+}
+
 function DetectionDebugPanel() {
-  const { dismissNudge, pause, refreshStatus, resume } = useDetection();
+  const { dismissNudge, pause, refreshStatus, resume, state } = useDetection();
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<DetectionDebug | DetectionState | null>(null);
+
+  useEffect(() => {
+    setResult((current) => (isDetectionStateResult(current) ? state : current));
+  }, [state]);
 
   async function runCommand(command: string) {
     setError(null);
@@ -57,13 +67,13 @@ function DetectionDebugPanel() {
         setResult(debug);
       } else if (command === "pause_detection") {
         await pause();
-        setResult(await refreshStatus());
+        setResult(state);
       } else if (command === "resume_detection") {
         await resume();
-        setResult(await refreshStatus());
+        setResult(state);
       } else if (command === "dismiss_nudge") {
         await dismissNudge();
-        setResult(await refreshStatus());
+        setResult(state);
       } else {
         const status = await refreshStatus();
         setResult(status);
