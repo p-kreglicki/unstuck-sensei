@@ -14,9 +14,9 @@ export function Session() {
 
   return (
     <div className="space-y-5">
-      {flow.statusMessage || flow.chatState.error ? (
+      {flow.statusMessage ? (
         <p className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
-          {flow.statusMessage ?? flow.chatState.error}
+          {flow.statusMessage}
         </p>
       ) : null}
 

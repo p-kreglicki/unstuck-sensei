@@ -1,4 +1,4 @@
-import { STUCK_ON_MAX_LENGTH } from "../../lib/session-input-limits";
+import { STUCK_ON_MAX_LENGTH } from "../../../shared/session/session-input-limits.js";
 
 type StuckInputProps = {
   helperText?: string | null;

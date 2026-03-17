@@ -1,4 +1,4 @@
-import type { EnergyLevel } from "../../lib/session-flow";
+import type { EnergyLevel } from "../../../shared/session/session-protocol.js";
 
 type EnergySelectorProps = {
   isSubmitting: boolean;

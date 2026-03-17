@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { encodeSseEvent, parseSseFrames } from "../lib/chat-sse.js";
+import { encodeSseEvent, parseSseFrames } from "../../shared/session/chat-sse.js";
 import {
   clampSteps,
   createSessionSteps,
@@ -11,26 +11,31 @@ import {
   type ChatRequestMode,
   type SessionSummary,
   type StructuredChatResponse,
-} from "../lib/session-flow.js";
+} from "../../shared/session/session-protocol.js";
 import {
   buildSessionSystemPrompt,
   buildSessionUserPrompt,
-} from "../lib/prompts/session.js";
+} from "../../shared/session/session-prompts.js";
 import {
   CLARIFYING_ANSWER_MAX_LENGTH,
   STUCK_ON_MAX_LENGTH,
-} from "../lib/session-input-limits.js";
+} from "../../shared/session/session-input-limits.js";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const MAX_RECENT_SESSIONS = 3;
 const MAX_STEPS = 5;
 const MAX_TOKENS = 700;
-const CORS_HEADERS = {
+const BASE_CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
   "Access-Control-Allow-Methods": "OPTIONS, POST",
-  "Access-Control-Allow-Origin": "*",
+  Vary: "Origin",
 };
+const ALLOWED_CORS_ORIGINS = new Set([
+  "http://localhost:1420",
+  "https://tauri.localhost",
+  "tauri://localhost",
+]);
 
 type NormalizedRequest = ChatRequestBody & {
   authorizationToken: string;
@@ -53,26 +58,28 @@ type RecentSessionRow = {
   stuck_on: string | null;
 };
 
-type LoadRecentSessionsQuery = {
-  eq(column: "user_id", value: string): LoadRecentSessionsQuery;
-  neq(column: "id", value: string): LoadRecentSessionsQuery;
-  order(
-    column: "created_at",
-    options: { ascending: boolean },
-  ): LoadRecentSessionsQuery;
-  limit(limit: number): PromiseLike<{
-    data: RecentSessionRow[] | null;
-    error: { message?: string } | null;
-  }>;
-};
-
-type LoadRecentSessionsRelation = {
-  select(columns: "created_at, feedback, steps, stuck_on"): LoadRecentSessionsQuery;
-};
-
 type StreamAttemptResult = {
   assistantText: string;
   structured: StructuredChatResponse;
+};
+
+type RecentSessionsQueryResult = {
+  data: RecentSessionRow[] | null;
+  error: { message?: string } | null;
+};
+
+type RecentSessionsClient = {
+  from(table: "sessions"): {
+    select(columns: string): {
+      eq(column: "user_id", value: string): {
+        neq(column: "id", value: string): {
+          order(column: "created_at", options: { ascending: boolean }): {
+            limit(limit: number): PromiseLike<RecentSessionsQueryResult>;
+          };
+        };
+      };
+    };
+  };
 };
 
 type NormalizedRequestBodyResult =
@@ -91,6 +98,11 @@ type ConsumeChatRateLimitStatus =
   | "rate_limited"
   | "unauthorized";
 
+type ChatRateLimitReservation = {
+  reservationId: string | null;
+  status: ConsumeChatRateLimitStatus;
+};
+
 type AnthropicErrorPayload = {
   error?: {
     message?: string;
@@ -104,7 +116,7 @@ export default {
   async fetch(request: Request) {
     if (request.method === "OPTIONS") {
       return new Response(null, {
-        headers: CORS_HEADERS,
+        headers: corsHeaders(request),
         status: 204,
       });
     }
@@ -112,6 +124,7 @@ export default {
     if (request.method !== "POST") {
       return jsonResponse(
         { error: "Method not allowed." },
+        request,
         {
           headers: {
             Allow: "OPTIONS, POST",
@@ -126,7 +139,7 @@ export default {
 };
 
 export async function handleChatRequest(request: Request) {
-  const environment = getRequiredEnvironment();
+  const environment = getRequiredEnvironment(request);
 
   if ("response" in environment) {
     return environment.response;
@@ -157,6 +170,7 @@ export async function handleChatRequest(request: Request) {
   if (authError || !user) {
     return jsonResponse(
       { error: "Unauthorized. Sign in again and retry." },
+      request,
       { status: 401 },
     );
   }
@@ -173,10 +187,13 @@ export async function handleChatRequest(request: Request) {
     },
   );
 
-  let rateLimitStatus: ConsumeChatRateLimitStatus;
+  let rateLimitReservation: ChatRateLimitReservation;
 
   try {
-    rateLimitStatus = await consumeRateLimit(scopedClient, normalizedRequest.sessionId);
+    rateLimitReservation = await consumeRateLimit(
+      scopedClient,
+      normalizedRequest.sessionId,
+    );
   } catch (error) {
     console.error("[chat] rate limit reservation failed", {
       error: error instanceof Error ? error.message : String(error),
@@ -186,41 +203,60 @@ export async function handleChatRequest(request: Request) {
 
     return jsonResponse(
       { error: "Unable to start the chat right now." },
+      request,
       { status: 500 },
     );
   }
 
-  if (rateLimitStatus === "unauthorized") {
+  if (rateLimitReservation.status === "unauthorized") {
     return jsonResponse(
       { error: "Unauthorized. Sign in again and retry." },
+      request,
       { status: 401 },
     );
   }
 
-  if (rateLimitStatus === "invalid_session") {
+  if (rateLimitReservation.status === "invalid_session") {
     return jsonResponse(
       { error: "Save the task first, then try again." },
+      request,
       { status: 400 },
     );
   }
 
-  if (rateLimitStatus === "rate_limited") {
+  if (rateLimitReservation.status === "rate_limited") {
     return jsonResponse(
       { error: "Rate limit reached. Take a breath, then try again soon." },
+      request,
       { status: 429 },
     );
   }
 
+  if (!rateLimitReservation.reservationId) {
+    console.error("[chat] rate limit reservation missing id", {
+      sessionId: normalizedRequest.sessionId,
+      userId: user.id,
+    });
+
+    return jsonResponse(
+      { error: "Unable to start the chat right now." },
+      request,
+      { status: 500 },
+    );
+  }
+
   const recentSessions = await loadRecentSessions(
-    scopedClient.from("sessions") as unknown as LoadRecentSessionsRelation,
+    scopedClient as unknown as RecentSessionsClient,
     user.id,
     normalizedRequest.sessionId,
   );
+  const reservationId = rateLimitReservation.reservationId;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
       let bytesWritten = false;
+      let streamResult: StreamAttemptResult | null = null;
 
       const writeEvent = (event: string, data: unknown) => {
         controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
@@ -228,7 +264,7 @@ export async function handleChatRequest(request: Request) {
       };
 
       try {
-        const result = await streamAnthropicResponse({
+        streamResult = await streamAnthropicResponse({
           anthropicApiKey: environment.anthropicApiKey,
           model: environment.anthropicModel,
           recentSessions,
@@ -236,11 +272,36 @@ export async function handleChatRequest(request: Request) {
           writeEvent,
         });
 
-        writeEvent("structured", result.structured);
+        await completeRateLimitReservation(scopedClient, reservationId);
+
+        writeEvent("structured", streamResult.structured);
         writeEvent("done", { ok: true });
       } catch (error) {
         const hadWrittenBytes = bytesWritten;
         const message = formatServerError(error);
+
+        if (!streamResult) {
+          try {
+            await releaseRateLimitReservation(scopedClient, reservationId);
+          } catch (releaseError) {
+            console.error("[chat] failed to release rate limit reservation", {
+              error:
+                releaseError instanceof Error
+                  ? releaseError.message
+                  : String(releaseError),
+              reservationId,
+              sessionId: normalizedRequest.sessionId,
+              userId: user.id,
+            });
+          }
+        } else {
+          console.error("[chat] failed to finalize rate limit reservation", {
+            error: error instanceof Error ? error.message : String(error),
+            reservationId,
+            sessionId: normalizedRequest.sessionId,
+            userId: user.id,
+          });
+        }
 
         writeEvent("error", {
           message,
@@ -258,7 +319,7 @@ export async function handleChatRequest(request: Request) {
 
   return new Response(stream, {
     headers: {
-      ...CORS_HEADERS,
+      ...corsHeaders(request),
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -401,11 +462,12 @@ async function streamAnthropicResponse(input: {
 }
 
 async function loadRecentSessions(
-  sessions: LoadRecentSessionsRelation,
+  client: RecentSessionsClient,
   userId: string,
   currentSessionId: string,
 ) {
-  const { data, error } = await sessions
+  const { data, error } = await client
+    .from("sessions")
     .select("created_at, feedback, steps, stuck_on")
     .eq("user_id", userId)
     .neq("id", currentSessionId)
@@ -436,11 +498,61 @@ export async function consumeRateLimit(
     throw new Error(error.message ?? "Rate limit reservation failed.");
   }
 
-  if (!isConsumeChatRateLimitStatus(data)) {
-    throw new Error("Rate limit reservation returned an invalid status.");
+  if (!isChatRateLimitReservation(data)) {
+    throw new Error("Rate limit reservation returned an invalid payload.");
   }
 
   return data;
+}
+
+async function completeRateLimitReservation(
+  client: {
+    rpc(fn: string, args: Record<string, unknown>): PromiseLike<{
+      data: unknown;
+      error: { message?: string } | null;
+    }>;
+  },
+  reservationId: string,
+) {
+  const { data, error } = await client.rpc(
+    "complete_chat_rate_limit_reservation",
+    {
+      input_log_id: reservationId,
+    },
+  );
+
+  if (error) {
+    throw new Error(error.message ?? "Rate limit finalization failed.");
+  }
+
+  if (data !== true) {
+    throw new Error("Rate limit finalization returned an invalid result.");
+  }
+}
+
+async function releaseRateLimitReservation(
+  client: {
+    rpc(fn: string, args: Record<string, unknown>): PromiseLike<{
+      data: unknown;
+      error: { message?: string } | null;
+    }>;
+  },
+  reservationId: string,
+) {
+  const { data, error } = await client.rpc(
+    "release_chat_rate_limit_reservation",
+    {
+      input_log_id: reservationId,
+    },
+  );
+
+  if (error) {
+    throw new Error(error.message ?? "Rate limit release failed.");
+  }
+
+  if (data !== true) {
+    throw new Error("Rate limit release returned an invalid result.");
+  }
 }
 
 export function normalizeRequestBody(body: unknown): NormalizedRequestBodyResult {
@@ -540,6 +652,7 @@ async function normalizeRequest(
     return {
       response: jsonResponse(
         { error: "Missing Authorization bearer token." },
+        request,
         { status: 401 },
       ),
     };
@@ -553,6 +666,7 @@ async function normalizeRequest(
     return {
       response: jsonResponse(
         { error: "Request body must be valid JSON." },
+        request,
         { status: 400 },
       ),
     };
@@ -564,6 +678,7 @@ async function normalizeRequest(
     return {
       response: jsonResponse(
         { error: normalizedBody.message },
+        request,
         { status: 400 },
       ),
     };
@@ -686,7 +801,9 @@ function toSessionSummary(session: RecentSessionRow): SessionSummary {
   };
 }
 
-function getRequiredEnvironment():
+function getRequiredEnvironment(
+  request: Request,
+):
   | {
       anthropicApiKey: string;
       anthropicModel: string;
@@ -708,6 +825,7 @@ function getRequiredEnvironment():
     return {
       response: jsonResponse(
         { error: "Server configuration is incomplete." },
+        request,
         { status: 500 },
       ),
     };
@@ -733,6 +851,19 @@ function isConsumeChatRateLimitStatus(
     value === "invalid_session" ||
     value === "rate_limited" ||
     value === "unauthorized"
+  );
+}
+
+function isChatRateLimitReservation(
+  value: unknown,
+): value is ChatRateLimitReservation {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "status" in value &&
+    isConsumeChatRateLimitStatus(value.status) &&
+    "reservationId" in value &&
+    (typeof value.reservationId === "string" || value.reservationId === null)
   );
 }
 
@@ -829,14 +960,28 @@ function logAnthropicRequestError(
   });
 }
 
+function corsHeaders(request: Request) {
+  const origin = request.headers.get("origin");
+
+  if (!origin || !ALLOWED_CORS_ORIGINS.has(origin)) {
+    return BASE_CORS_HEADERS;
+  }
+
+  return {
+    ...BASE_CORS_HEADERS,
+    "Access-Control-Allow-Origin": origin,
+  };
+}
+
 function jsonResponse(
   body: Record<string, unknown>,
+  request: Request,
   init: ResponseInit,
 ) {
   return new Response(JSON.stringify(body), {
     ...init,
     headers: {
-      ...CORS_HEADERS,
+      ...corsHeaders(request),
       "content-type": "application/json; charset=utf-8",
       ...init.headers,
     },

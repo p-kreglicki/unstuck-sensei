@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { parseSseFrames } from "../lib/chat-sse";
+import { parseSseFrames } from "../../shared/session/chat-sse.js";
 import { supabase } from "../lib/supabase";
 import {
   isStructuredChatResponse,
@@ -7,7 +7,7 @@ import {
   type EnergyLevel,
   type SessionSource,
   type StructuredChatResponse,
-} from "../lib/session-flow";
+} from "../../shared/session/session-protocol.js";
 
 export type ChatState = {
   error: string | null;

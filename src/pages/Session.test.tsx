@@ -143,4 +143,34 @@ describe("Session", () => {
       ).toBeInTheDocument();
     });
   });
+
+  it("does not render the raw chat hook error banner on its own", async () => {
+    useChatMock.mockReturnValue({
+      cancel: vi.fn(),
+      retry: vi.fn(),
+      sendClarification: vi.fn(),
+      sendInitial: vi.fn(),
+      state: {
+        error: "The coaching request failed.",
+        isStreaming: false,
+        streamingText: "",
+        structuredResult: null,
+      },
+    });
+    loadRecentSessionSummariesMock.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter>
+        <Session />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("What are you stuck on?")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByText("The coaching request failed."),
+    ).not.toBeInTheDocument();
+  });
 });

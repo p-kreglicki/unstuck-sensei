@@ -23,14 +23,27 @@ BEGIN
         clarifying_answer IS NULL OR char_length(clarifying_answer) <= 1000
       ) NOT VALID;
   END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'sessions_stuck_on_length_check'
+      AND conrelid = 'public.sessions'::regclass
+  ) THEN
+    ALTER TABLE public.sessions
+      VALIDATE CONSTRAINT sessions_stuck_on_length_check;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'sessions_clarifying_answer_length_check'
+      AND conrelid = 'public.sessions'::regclass
+  ) THEN
+    ALTER TABLE public.sessions
+      VALIDATE CONSTRAINT sessions_clarifying_answer_length_check;
+  END IF;
 END
 $$;
-
-ALTER TABLE public.sessions
-  VALIDATE CONSTRAINT sessions_stuck_on_length_check;
-
-ALTER TABLE public.sessions
-  VALIDATE CONSTRAINT sessions_clarifying_answer_length_check;
 
 CREATE TABLE IF NOT EXISTS public.chat_request_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

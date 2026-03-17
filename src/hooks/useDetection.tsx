@@ -1,9 +1,11 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
+  useCallback,
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -58,7 +60,7 @@ async function getDetectionStatus(): Promise<DetectionState> {
 export function DetectionProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DetectionState>(defaultDetectionState);
 
-  async function refreshStatus(): Promise<DetectionState> {
+  const refreshStatus = useCallback(async (): Promise<DetectionState> => {
     if (!isTauri()) {
       setState(defaultDetectionState);
       return defaultDetectionState;
@@ -72,41 +74,39 @@ export function DetectionProvider({ children }: { children: ReactNode }) {
       logDetectionError("failed to refresh detection status", error);
       throw error;
     }
-  }
+  }, []);
 
-  async function runCommand(
+  const runCommand = useCallback(async (
     command: "dismiss_nudge" | "pause_detection" | "resume_detection",
-  ) {
+  ) => {
     if (!isTauri()) {
       setState(defaultDetectionState);
       return;
     }
 
     await invoke(command);
-    await refreshStatus();
-  }
+  }, []);
 
-  async function syncConfig(config: DetectionConfig) {
+  const syncConfig = useCallback(async (config: DetectionConfig) => {
     if (!isTauri()) {
       setState(defaultDetectionState);
       return;
     }
 
     await invoke("sync_detection_config", config);
-    await refreshStatus();
-  }
+  }, []);
 
-  async function pause() {
+  const pause = useCallback(async () => {
     await runCommand("pause_detection");
-  }
+  }, [runCommand]);
 
-  async function resume() {
+  const resume = useCallback(async () => {
     await runCommand("resume_detection");
-  }
+  }, [runCommand]);
 
-  async function dismissNudge() {
+  const dismissNudge = useCallback(async () => {
     await runCommand("dismiss_nudge");
-  }
+  }, [runCommand]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -121,11 +121,11 @@ export function DetectionProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    const refreshVisibleStatus = () => {
+    const refreshFocusedStatus = () => {
       void getDetectionStatus()
         .then(applyStatus)
         .catch((error) => {
-          logDetectionError("failed to refresh visible detection status", error);
+          logDetectionError("failed to refresh focused detection status", error);
         });
     };
 
@@ -142,22 +142,14 @@ export function DetectionProvider({ children }: { children: ReactNode }) {
         logDetectionError("failed to load initial detection status", error);
       });
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        refreshVisibleStatus();
-      }
-    };
-
     const handleWindowFocus = () => {
-      refreshVisibleStatus();
+      refreshFocusedStatus();
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleWindowFocus);
 
     return () => {
       active = false;
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleWindowFocus);
       void unlistenPromise
         .then((unlisten) => {
@@ -169,17 +161,20 @@ export function DetectionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const value = useMemo(
+    () => ({
+      dismissNudge,
+      pause,
+      refreshStatus,
+      resume,
+      state,
+      syncConfig,
+    }),
+    [dismissNudge, pause, refreshStatus, resume, state, syncConfig],
+  );
+
   return (
-    <DetectionContext.Provider
-      value={{
-        dismissNudge,
-        pause,
-        refreshStatus,
-        resume,
-        state,
-        syncConfig,
-      }}
-    >
+    <DetectionContext.Provider value={value}>
       {children}
     </DetectionContext.Provider>
   );

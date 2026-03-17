@@ -1,8 +1,9 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useAuth } from "../hooks/useAuth";
 import { type DetectionState, useDetection } from "../hooks/useDetection";
+import { formatError } from "../lib/formatError";
 import { DetectionNudgeBanner } from "./DetectionNudgeBanner";
 
 const navItems = [
@@ -17,59 +18,60 @@ type DetectionDebug = {
   lastForegroundBundleId: string | null;
 };
 
-function formatInvokeError(error: unknown) {
-  if (typeof error === "string") {
-    return error;
-  }
+type DebugCommand =
+  | "dismiss_nudge"
+  | "get_detection_debug"
+  | "get_detection_status"
+  | "pause_detection"
+  | "resume_detection";
 
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-
-  return "Command failed.";
+function isDetectionStateResult(
+  value: DetectionDebug | DetectionState | null,
+): value is DetectionState {
+  return !!value && "nudgeActive" in value;
 }
 
 function DetectionDebugPanel() {
-  const { dismissNudge, pause, refreshStatus, resume } = useDetection();
+  const { dismissNudge, pause, refreshStatus, resume, state } = useDetection();
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<DetectionDebug | DetectionState | null>(null);
 
-  async function runCommand(command: string) {
+  useEffect(() => {
+    setResult((current) => (isDetectionStateResult(current) ? state : current));
+  }, [state]);
+
+  async function runCommand(command: DebugCommand) {
     setError(null);
     setIsRunning(true);
 
     try {
-      if (command === "get_detection_status") {
-        const status = await refreshStatus();
-        setResult(status);
-      } else if (command === "get_detection_debug") {
-        const debug = await invoke<DetectionDebug>("get_detection_debug");
-        setResult(debug);
-      } else if (command === "pause_detection") {
-        await pause();
-        setResult(await refreshStatus());
-      } else if (command === "resume_detection") {
-        await resume();
-        setResult(await refreshStatus());
-      } else if (command === "dismiss_nudge") {
-        await dismissNudge();
-        setResult(await refreshStatus());
-      } else {
-        const status = await refreshStatus();
-        setResult(status);
+      switch (command) {
+        case "get_detection_status": {
+          const status = await refreshStatus();
+          setResult(status);
+          break;
+        }
+        case "get_detection_debug": {
+          const debug = await invoke<DetectionDebug>("get_detection_debug");
+          setResult(debug);
+          break;
+        }
+        case "pause_detection":
+          await pause();
+          setResult(state);
+          break;
+        case "resume_detection":
+          await resume();
+          setResult(state);
+          break;
+        case "dismiss_nudge":
+          await dismissNudge();
+          setResult(state);
+          break;
       }
     } catch (nextError) {
-      setError(formatInvokeError(nextError));
+      setError(formatError(nextError));
     } finally {
       setIsRunning(false);
     }

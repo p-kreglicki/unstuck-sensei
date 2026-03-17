@@ -143,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [session?.user.id]);
+  }, [session?.user.id, syncConfig]);
 
   async function maybeEnableAutostart() {
     try {

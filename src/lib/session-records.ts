@@ -4,7 +4,7 @@ import {
   type SessionSource,
   type SessionStep,
   type SessionSummary,
-} from "./session-flow";
+} from "../../shared/session/session-protocol.js";
 import type { Database } from "./database.types";
 
 export type ConversationMessageRow =

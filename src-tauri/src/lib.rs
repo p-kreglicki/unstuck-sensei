@@ -14,7 +14,8 @@ use tauri::{
 };
 
 use crate::detection::{
-    execute_runtime_effects, DetectionRuntimeEffect, DetectionState, DetectionStatus,
+    execute_runtime_effects, recover_detection_state_lock, DetectionRuntimeEffect, DetectionState,
+    DetectionStatus,
 };
 
 const TRAY_ID: &str = "main";
@@ -76,10 +77,8 @@ fn pause_menu_state(status: DetectionStatus) -> (&'static str, bool) {
 }
 
 pub(crate) fn sync_tray_menu(app: &AppHandle<Wry>) -> Result<(), String> {
-    let state = app.state::<Mutex<DetectionState>>();
-    let state = state
-        .lock()
-        .map_err(|_| "Detection state lock is poisoned.".to_string())?;
+    let detection_state = app.state::<Mutex<DetectionState>>();
+    let state = recover_detection_state_lock(detection_state.inner(), "tray_menu");
     let tray = app
         .tray_by_id(TRAY_ID)
         .ok_or_else(|| "Main tray icon not available.".to_string())?;
@@ -122,10 +121,7 @@ fn show_main_window(app: &AppHandle<Wry>, window_visible: &AtomicBool) {
 }
 
 fn navigate_app(app: &AppHandle<Wry>, to: &'static str, source: Option<&'static str>) {
-    if let Err(error) = app.emit(
-        APP_NAVIGATE_EVENT,
-        AppNavigatePayload { to, source },
-    ) {
+    if let Err(error) = app.emit(APP_NAVIGATE_EVENT, AppNavigatePayload { to, source }) {
         eprintln!("[tray] failed to emit app navigation event: {error}");
     }
 }
@@ -153,14 +149,9 @@ fn toggle_main_window(app: &AppHandle<Wry>, window_visible: &AtomicBool) {
 }
 
 fn sync_detection_window_visibility(app: &AppHandle<Wry>, visible: bool) {
-    let state = app.state::<Mutex<DetectionState>>();
-    let effects = match state.lock() {
-        Ok(mut state) => state.set_app_foregrounded(visible),
-        Err(_) => {
-            eprintln!("[tray] detection state lock is poisoned");
-            return;
-        }
-    };
+    let detection_state = app.state::<Mutex<DetectionState>>();
+    let mut state = recover_detection_state_lock(detection_state.inner(), "tray_visibility");
+    let effects = state.set_app_foregrounded(visible);
 
     if let Err(error) = execute_detection_effects(app, effects, false) {
         eprintln!("[tray] failed to execute detection effects: {error}");
@@ -168,11 +159,9 @@ fn sync_detection_window_visibility(app: &AppHandle<Wry>, visible: bool) {
 }
 
 fn toggle_detection_pause(app: &AppHandle<Wry>) -> Result<(), String> {
-    let state = app.state::<Mutex<DetectionState>>();
+    let detection_state = app.state::<Mutex<DetectionState>>();
     let effects = {
-        let mut state = state
-            .lock()
-            .map_err(|_| "Detection state lock is poisoned.".to_string())?;
+        let mut state = recover_detection_state_lock(detection_state.inner(), "tray_toggle_pause");
 
         match state.status {
             DetectionStatus::Paused => state.resume(),
@@ -233,12 +222,9 @@ pub fn run() {
 
                         move |app, event| match event.id().as_ref() {
                             MENU_SIGN_IN => show_main_window(app, &window_visible),
-                            MENU_START_SESSION => show_main_window_and_route(
-                                app,
-                                &window_visible,
-                                "/",
-                                Some("tray"),
-                            ),
+                            MENU_START_SESSION => {
+                                show_main_window_and_route(app, &window_visible, "/", Some("tray"))
+                            }
                             MENU_SETTINGS => show_main_window_and_route(
                                 app,
                                 &window_visible,

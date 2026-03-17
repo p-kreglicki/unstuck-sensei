@@ -5,7 +5,7 @@ import { toDisplayError } from "../lib/errors";
 import {
   CLARIFYING_ANSWER_MAX_LENGTH,
   STUCK_ON_MAX_LENGTH,
-} from "../lib/session-input-limits";
+} from "../../shared/session/session-input-limits.js";
 import {
   createSessionDraft,
   insertConversationMessage,
@@ -18,14 +18,14 @@ import {
   type SessionRow,
 } from "../lib/session-records";
 import {
-  formatSessionReminder,
   isEnergyLevel,
-  moveStep,
+  isSessionSource,
   type EnergyLevel,
   type SessionSource,
   type SessionStep,
   type StructuredChatResponse,
-} from "../lib/session-flow";
+} from "../../shared/session/session-protocol.js";
+import { formatSessionReminder, moveStep } from "../lib/session-flow";
 
 type SessionStage =
   | "clarifying"
@@ -51,6 +51,34 @@ export type TranscriptRow = {
 type UseSessionFlowOptions = {
   locationState: unknown;
 };
+
+async function persistSessionPatch(input: {
+  currentSession: SessionRow;
+  patch: Parameters<typeof updateSessionDraft>[1];
+  userMessage?: {
+    content: string;
+    role: "user";
+  };
+}) {
+  const nextSessionPromise = updateSessionDraft(input.currentSession.id, input.patch);
+  const userMessagePromise = input.userMessage
+    ? insertConversationMessage({
+        content: input.userMessage.content,
+        role: input.userMessage.role,
+        sessionId: input.currentSession.id,
+      })
+    : Promise.resolve(null);
+
+  const [nextSession, userMessage] = await Promise.all([
+    nextSessionPromise,
+    userMessagePromise,
+  ]);
+
+  return {
+    nextSession,
+    userMessage,
+  };
+}
 
 export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
   const { user } = useAuth();
@@ -240,23 +268,29 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     setStatusMessage(null);
 
     try {
-      const nextSession = await updateSessionDraft(sessionRow.id, {
-        energy_level: energyLevel,
+      const { nextSession, userMessage } = await persistSessionPatch({
+        currentSession: sessionRow,
+        patch: {
+          energy_level: energyLevel,
+        },
+        userMessage:
+          messages.length === 0
+            ? {
+                content: stuckOn,
+                role: "user",
+              }
+            : undefined,
       });
+
       setSessionRow(nextSession);
 
-      if (messages.length === 0) {
-        const userMessage = await insertConversationMessage({
-          content: stuckOn,
-          role: "user",
-          sessionId: sessionRow.id,
-        });
+      if (userMessage) {
         setMessages((current) => [...current, userMessage]);
       }
 
       const structured = await chat.sendInitial({
         energyLevel,
-        source: (nextSession.source as SessionSource | null) ?? requestedSource,
+        source: nextSession.source ?? requestedSource,
         stuckOn,
       });
 
@@ -283,22 +317,27 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     setStatusMessage(null);
 
     try {
-      const nextSession = await updateSessionDraft(sessionRow.id, {
-        clarifying_answer: answer,
+      const { nextSession, userMessage } = await persistSessionPatch({
+        currentSession: sessionRow,
+        patch: {
+          clarifying_answer: answer,
+        },
+        userMessage: {
+          content: answer,
+          role: "user",
+        },
       });
+
       setSessionRow(nextSession);
 
-      const userMessage = await insertConversationMessage({
-        content: answer,
-        role: "user",
-        sessionId: sessionRow.id,
-      });
-      setMessages((current) => [...current, userMessage]);
+      if (userMessage) {
+        setMessages((current) => [...current, userMessage]);
+      }
 
       const structured = await chat.sendClarification({
         clarifyingAnswer: answer,
         energyLevel,
-        source: (nextSession.source as SessionSource | null) ?? requestedSource,
+        source: nextSession.source ?? requestedSource,
         stuckOn: nextSession.stuck_on ?? stuckOnInput.trim(),
       });
 
@@ -326,7 +365,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     try {
       const structured = await chat.retry({
         energyLevel,
-        source: (sessionRow.source as SessionSource | null) ?? requestedSource,
+        source: sessionRow.source ?? requestedSource,
         stuckOn,
       });
 
@@ -361,21 +400,24 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     currentSession: SessionRow,
     structured: StructuredChatResponse,
   ) {
-    const assistantMessage = await insertConversationMessage({
+    const nextSessionPromise =
+      structured.kind === "clarifying_question"
+        ? updateSessionDraft(currentSession.id, {
+            clarifying_question: structured.question,
+            steps: null,
+          })
+        : updateSessionDraft(currentSession.id, {
+            steps: structured.steps,
+          });
+    const assistantMessagePromise = insertConversationMessage({
       content: structured.assistantText,
       role: "assistant",
       sessionId: currentSession.id,
     });
-
-    const nextSession =
-      structured.kind === "clarifying_question"
-        ? await updateSessionDraft(currentSession.id, {
-            clarifying_question: structured.question,
-            steps: null,
-          })
-        : await updateSessionDraft(currentSession.id, {
-            steps: structured.steps,
-          });
+    const [nextSession, assistantMessage] = await Promise.all([
+      nextSessionPromise,
+      assistantMessagePromise,
+    ]);
 
     setMessages((current) => [...current, assistantMessage]);
     setSessionRow(nextSession);
@@ -435,14 +477,28 @@ function deriveStage(input: {
   return "compose";
 }
 
-function readRequestedSource(state: unknown): SessionSource {
-  const candidate = state as SessionLocationState | null;
+function isSessionLocationState(value: unknown): value is SessionLocationState {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
 
-  if (candidate?.sessionSource === "detection") {
+  if (!("sessionSource" in value)) {
+    return true;
+  }
+
+  return value.sessionSource === undefined || isSessionSource(value.sessionSource);
+}
+
+function readRequestedSource(state: unknown): SessionSource {
+  if (!isSessionLocationState(state)) {
+    return "manual";
+  }
+
+  if (state.sessionSource === "detection") {
     return "detection";
   }
 
-  if (candidate?.sessionSource === "email") {
+  if (state.sessionSource === "email") {
     return "email";
   }
 

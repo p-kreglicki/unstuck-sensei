@@ -1,6 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { useChat } from "./useChat";
-import { encodeSseEvent } from "../lib/chat-sse";
+import { encodeSseEvent } from "../../shared/session/chat-sse.js";
 
 const { getSessionMock } = vi.hoisted(() => ({
   getSessionMock: vi.fn(),

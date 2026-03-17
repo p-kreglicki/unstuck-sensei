@@ -6,7 +6,9 @@ use tauri_plugin_store::StoreExt;
 
 use crate::detection::DetectionDebugResponse;
 use crate::{
-    detection::{DetectionState, DetectionStatusResponse, Sensitivity},
+    detection::{
+        recover_detection_state_lock, DetectionState, DetectionStatusResponse, Sensitivity,
+    },
     execute_detection_effects,
 };
 
@@ -17,9 +19,7 @@ fn with_detection_state<T>(
     state: &State<'_, Mutex<DetectionState>>,
     handler: impl FnOnce(&mut DetectionState) -> T,
 ) -> Result<T, String> {
-    let mut state = state
-        .lock()
-        .map_err(|_| "Detection state lock is poisoned.".to_string())?;
+    let mut state = recover_detection_state_lock(state.inner(), "commands");
 
     Ok(handler(&mut state))
 }

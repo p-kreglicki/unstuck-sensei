@@ -1,2 +1,0 @@
-export const STUCK_ON_MAX_LENGTH = 2000;
-export const CLARIFYING_ANSWER_MAX_LENGTH = 1000;

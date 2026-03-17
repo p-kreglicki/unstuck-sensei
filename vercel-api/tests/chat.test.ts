@@ -6,7 +6,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: createClientMock,
 }));
 
-import {
+import chatRoute, {
   consumeRateLimit,
   handleChatRequest,
   normalizeAnthropicError,
@@ -14,6 +14,43 @@ import {
   normalizeStructuredResponse,
   OutputAccumulator,
 } from "../api/chat.js";
+
+function createSessionsFromMock() {
+  const limit = vi.fn().mockResolvedValue({
+    data: [],
+    error: null,
+  });
+  const order = vi.fn().mockReturnValue({ limit });
+  const neq = vi.fn().mockReturnValue({ order });
+  const eq = vi.fn().mockReturnValue({ neq });
+  const select = vi.fn().mockReturnValue({ eq });
+
+  return {
+    from: vi.fn().mockReturnValue({ select }),
+  };
+}
+
+function createAnthropicStreamResponse(frames: string[]) {
+  const encoder = new TextEncoder();
+
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const frame of frames) {
+          controller.enqueue(encoder.encode(frame));
+        }
+
+        controller.close();
+      },
+    }),
+    {
+      headers: {
+        "Content-Type": "text/event-stream",
+      },
+      status: 200,
+    },
+  );
+}
 
 describe("chat route helpers", () => {
   beforeEach(() => {
@@ -51,6 +88,61 @@ describe("chat route helpers", () => {
     );
 
     expect(response.status).toBe(401);
+  });
+
+  it("reflects allowed app origins in preflight responses", async () => {
+    const response = await chatRoute.fetch(
+      new Request("https://example.com/api/chat", {
+        headers: {
+          Origin: "http://localhost:1420",
+        },
+        method: "OPTIONS",
+      }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(
+      "http://localhost:1420",
+    );
+    expect(response.headers.get("Vary")).toBe("Origin");
+  });
+
+  it("does not allow unknown origins in preflight responses", async () => {
+    const response = await chatRoute.fetch(
+      new Request("https://example.com/api/chat", {
+        headers: {
+          Origin: "https://evil.example",
+        },
+        method: "OPTIONS",
+      }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("includes the allowlisted origin on error responses", async () => {
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: "session-1",
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://tauri.localhost",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(
+      "https://tauri.localhost",
+    );
   });
 
   it("returns 500 when required env is missing", async () => {
@@ -133,7 +225,10 @@ describe("chat route helpers", () => {
       error: null,
     });
     const rpcMock = vi.fn().mockResolvedValue({
-      data: "rate_limited",
+      data: {
+        reservationId: null,
+        status: "rate_limited",
+      },
       error: null,
     });
 
@@ -231,7 +326,159 @@ describe("chat route helpers", () => {
         },
         "session-1",
       ),
-    ).rejects.toThrow("invalid status");
+    ).rejects.toThrow("invalid payload");
+  });
+
+  it("finalizes the rate-limit reservation after a successful stream", async () => {
+    const getUserMock = vi.fn().mockResolvedValue({
+      data: { user: { id: "user-1" } },
+      error: null,
+    });
+    const rpcMock = vi.fn(async (fn: string) => {
+      if (fn === "consume_chat_rate_limit") {
+        return {
+          data: {
+            reservationId: "log-1",
+            status: "allowed",
+          },
+          error: null,
+        };
+      }
+
+      if (fn === "complete_chat_rate_limit_reservation") {
+        return {
+          data: true,
+          error: null,
+        };
+      }
+
+      throw new Error(`Unexpected RPC ${fn}`);
+    });
+
+    createClientMock
+      .mockReturnValueOnce({
+        auth: {
+          getUser: getUserMock,
+        },
+      })
+      .mockReturnValueOnce({
+        ...createSessionsFromMock(),
+        rpc: rpcMock,
+      });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        createAnthropicStreamResponse([
+          "event: content_block_delta\n",
+          'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Let\\u2019s keep this tiny.\\n<<<STRUCTURED_RESPONSE>>>\\n{\\"kind\\":\\"steps\\",\\"steps\\":[\\"Open the release checklist.\\",\\"Ship the smallest usable path.\\",\\"Send the beta invite.\\"]}"}}\n\n',
+        ]),
+      ),
+    );
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: "session-1",
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toContain("event: structured");
+    expect(rpcMock).toHaveBeenCalledWith("complete_chat_rate_limit_reservation", {
+      input_log_id: "log-1",
+    });
+  });
+
+  it("releases the rate-limit reservation when the Anthropic request fails", async () => {
+    const getUserMock = vi.fn().mockResolvedValue({
+      data: { user: { id: "user-1" } },
+      error: null,
+    });
+    const rpcMock = vi.fn(async (fn: string) => {
+      if (fn === "consume_chat_rate_limit") {
+        return {
+          data: {
+            reservationId: "log-1",
+            status: "allowed",
+          },
+          error: null,
+        };
+      }
+
+      if (fn === "release_chat_rate_limit_reservation") {
+        return {
+          data: true,
+          error: null,
+        };
+      }
+
+      throw new Error(`Unexpected RPC ${fn}`);
+    });
+
+    createClientMock
+      .mockReturnValueOnce({
+        auth: {
+          getUser: getUserMock,
+        },
+      })
+      .mockReturnValueOnce({
+        ...createSessionsFromMock(),
+        rpc: rpcMock,
+      });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "Anthropic is unavailable.",
+              type: "api_error",
+            },
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+            status: 503,
+          },
+        ),
+      ),
+    );
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: "session-1",
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toContain("event: error");
+    expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
+      input_log_id: "log-1",
+    });
   });
 
   it("normalizes a valid structured steps response", () => {
