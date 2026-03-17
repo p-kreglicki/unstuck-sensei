@@ -475,10 +475,248 @@ describe("chat route helpers", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.text()).resolves.toContain("event: error");
+    const errorBody = await response.text();
+    expect(errorBody).toContain("event: error");
+    expect(errorBody).toContain('"recoverable":true');
     expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
       input_log_id: "log-1",
     });
+  });
+
+  it("marks missing structured output as recoverable when nothing reached the client", async () => {
+    const getUserMock = vi.fn().mockResolvedValue({
+      data: { user: { id: "user-1" } },
+      error: null,
+    });
+    const rpcMock = vi.fn(async (fn: string) => {
+      if (fn === "consume_chat_rate_limit") {
+        return {
+          data: {
+            reservationId: "log-1",
+            status: "allowed",
+          },
+          error: null,
+        };
+      }
+
+      if (fn === "release_chat_rate_limit_reservation") {
+        return {
+          data: true,
+          error: null,
+        };
+      }
+
+      throw new Error(`Unexpected RPC ${fn}`);
+    });
+
+    createClientMock
+      .mockReturnValueOnce({
+        auth: {
+          getUser: getUserMock,
+        },
+      })
+      .mockReturnValueOnce({
+        ...createSessionsFromMock(),
+        rpc: rpcMock,
+      });
+
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(
+            createAnthropicStreamResponse([
+            "event: content_block_delta\n",
+            'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":""}}\n\n',
+            ]),
+          ),
+        ),
+    );
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: "session-1",
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("The coaching stream failed unexpectedly.");
+    expect(body).toContain('"recoverable":true');
+    expect(body).toContain('event: done\ndata: {"ok":false}');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
+      input_log_id: "log-1",
+    });
+  });
+
+  it("marks missing structured output as non-recoverable after streaming text", async () => {
+    const getUserMock = vi.fn().mockResolvedValue({
+      data: { user: { id: "user-1" } },
+      error: null,
+    });
+    const rpcMock = vi.fn(async (fn: string) => {
+      if (fn === "consume_chat_rate_limit") {
+        return {
+          data: {
+            reservationId: "log-1",
+            status: "allowed",
+          },
+          error: null,
+        };
+      }
+
+      if (fn === "release_chat_rate_limit_reservation") {
+        return {
+          data: true,
+          error: null,
+        };
+      }
+
+      throw new Error(`Unexpected RPC ${fn}`);
+    });
+
+    createClientMock
+      .mockReturnValueOnce({
+        auth: {
+          getUser: getUserMock,
+        },
+      })
+      .mockReturnValueOnce({
+        ...createSessionsFromMock(),
+        rpc: rpcMock,
+      });
+
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          createAnthropicStreamResponse([
+            "event: content_block_delta\n",
+            'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Let\\u2019s keep this tiny."}}\n\n',
+          ]),
+        ),
+    );
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: "session-1",
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('event: text-delta\ndata: {"text":"Let\u2019s keep this tiny."}');
+    expect(body).toContain("The coaching stream failed unexpectedly.");
+    expect(body).toContain('"recoverable":false');
+    expect(body).not.toContain('event: done\ndata: {"ok":false}');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
+      input_log_id: "log-1",
+    });
+  });
+
+  it("does not leak unexpected streaming errors to the SSE client", async () => {
+    const getUserMock = vi.fn().mockResolvedValue({
+      data: { user: { id: "user-1" } },
+      error: null,
+    });
+    const rpcMock = vi.fn(async (fn: string) => {
+      if (fn === "consume_chat_rate_limit") {
+        return {
+          data: {
+            reservationId: "log-1",
+            status: "allowed",
+          },
+          error: null,
+        };
+      }
+
+      if (fn === "release_chat_rate_limit_reservation") {
+        return {
+          data: true,
+          error: null,
+        };
+      }
+
+      throw new Error(`Unexpected RPC ${fn}`);
+    });
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    createClientMock
+      .mockReturnValueOnce({
+        auth: {
+          getUser: getUserMock,
+        },
+      })
+      .mockReturnValueOnce({
+        ...createSessionsFromMock(),
+        rpc: rpcMock,
+      });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error('relation "private.audit" does not exist')),
+    );
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: "session-1",
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("The coaching stream failed unexpectedly.");
+    expect(body).toContain('"recoverable":false');
+    expect(body).not.toContain('relation "private.audit" does not exist');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] unexpected streaming failure",
+      expect.objectContaining({
+        error: 'relation "private.audit" does not exist',
+        reservationId: "log-1",
+        sessionId: "session-1",
+        userId: "user-1",
+      }),
+    );
+    consoleErrorSpy.mockRestore();
   });
 
   it("normalizes a valid structured steps response", () => {
