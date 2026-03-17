@@ -68,20 +68,6 @@ type RecentSessionsQueryResult = {
   error: { message?: string } | null;
 };
 
-type RecentSessionsClient = {
-  from(table: "sessions"): {
-    select(columns: string): {
-      eq(column: "user_id", value: string): {
-        neq(column: "id", value: string): {
-          order(column: "created_at", options: { ascending: boolean }): {
-            limit(limit: number): PromiseLike<RecentSessionsQueryResult>;
-          };
-        };
-      };
-    };
-  };
-};
-
 type NormalizedRequestBodyResult =
   | {
       kind: "error";
@@ -246,9 +232,14 @@ export async function handleChatRequest(request: Request) {
   }
 
   const recentSessions = await loadRecentSessions(
-    scopedClient as unknown as RecentSessionsClient,
-    user.id,
-    normalizedRequest.sessionId,
+    () =>
+      scopedClient
+        .from("sessions")
+        .select("created_at, feedback, steps, stuck_on")
+        .eq("user_id", user.id)
+        .neq("id", normalizedRequest.sessionId)
+        .order("created_at", { ascending: false })
+        .limit(MAX_RECENT_SESSIONS),
   );
   const reservationId = rateLimitReservation.reservationId;
 
@@ -279,6 +270,16 @@ export async function handleChatRequest(request: Request) {
       } catch (error) {
         const hadWrittenBytes = bytesWritten;
         const message = formatServerError(error);
+
+        if (!(error instanceof AnthropicRequestError)) {
+          console.error("[chat] unexpected streaming failure", {
+            error: error instanceof Error ? error.message : String(error),
+            reservationId,
+            sessionId: normalizedRequest.sessionId,
+            stack: error instanceof Error ? error.stack : undefined,
+            userId: user.id,
+          });
+        }
 
         if (!streamResult) {
           try {
@@ -462,17 +463,9 @@ async function streamAnthropicResponse(input: {
 }
 
 async function loadRecentSessions(
-  client: RecentSessionsClient,
-  userId: string,
-  currentSessionId: string,
+  runQuery: () => PromiseLike<RecentSessionsQueryResult>,
 ) {
-  const { data, error } = await client
-    .from("sessions")
-    .select("created_at, feedback, steps, stuck_on")
-    .eq("user_id", userId)
-    .neq("id", currentSessionId)
-    .order("created_at", { ascending: false })
-    .limit(MAX_RECENT_SESSIONS);
+  const { data, error } = await runQuery();
 
   if (error || !data) {
     return [];
@@ -989,7 +982,7 @@ function jsonResponse(
 }
 
 function formatServerError(error: unknown) {
-  if (error instanceof Error) {
+  if (error instanceof AnthropicRequestError) {
     return error.message;
   }
 

@@ -481,6 +481,84 @@ describe("chat route helpers", () => {
     });
   });
 
+  it("does not leak unexpected streaming errors to the SSE client", async () => {
+    const getUserMock = vi.fn().mockResolvedValue({
+      data: { user: { id: "user-1" } },
+      error: null,
+    });
+    const rpcMock = vi.fn(async (fn: string) => {
+      if (fn === "consume_chat_rate_limit") {
+        return {
+          data: {
+            reservationId: "log-1",
+            status: "allowed",
+          },
+          error: null,
+        };
+      }
+
+      if (fn === "release_chat_rate_limit_reservation") {
+        return {
+          data: true,
+          error: null,
+        };
+      }
+
+      throw new Error(`Unexpected RPC ${fn}`);
+    });
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    createClientMock
+      .mockReturnValueOnce({
+        auth: {
+          getUser: getUserMock,
+        },
+      })
+      .mockReturnValueOnce({
+        ...createSessionsFromMock(),
+        rpc: rpcMock,
+      });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error('relation "private.audit" does not exist')),
+    );
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: "session-1",
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("The coaching stream failed unexpectedly.");
+    expect(body).not.toContain('relation "private.audit" does not exist');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] unexpected streaming failure",
+      expect.objectContaining({
+        error: 'relation "private.audit" does not exist',
+        reservationId: "log-1",
+        sessionId: "session-1",
+        userId: "user-1",
+      }),
+    );
+    consoleErrorSpy.mockRestore();
+  });
+
   it("normalizes a valid structured steps response", () => {
     const response = normalizeStructuredResponse(
       JSON.stringify({
