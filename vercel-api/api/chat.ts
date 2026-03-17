@@ -306,8 +306,7 @@ export async function handleChatRequest(request: Request) {
 
         writeEvent("error", {
           message,
-          recoverable:
-            error instanceof AnthropicRequestError ? error.retryable : false,
+          recoverable: error instanceof RetryableError ? error.retryable : false,
         });
 
         if (!hadWrittenBytes) {
