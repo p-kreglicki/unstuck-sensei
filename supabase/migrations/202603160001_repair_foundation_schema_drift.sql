@@ -4,6 +4,10 @@
 -- ============================================
 -- PROFILES
 -- ============================================
+ALTER TABLE public.profiles
+  ALTER COLUMN created_at SET DEFAULT NOW(),
+  ALTER COLUMN updated_at SET DEFAULT NOW();
+
 UPDATE public.profiles
 SET created_at = NOW()
 WHERE created_at IS NULL;
@@ -13,9 +17,7 @@ SET updated_at = NOW()
 WHERE updated_at IS NULL;
 
 ALTER TABLE public.profiles
-  ALTER COLUMN created_at SET DEFAULT NOW(),
   ALTER COLUMN created_at SET NOT NULL,
-  ALTER COLUMN updated_at SET DEFAULT NOW(),
   ALTER COLUMN updated_at SET NOT NULL;
 
 DO $$
@@ -86,6 +88,10 @@ $$;
 ALTER TABLE public.sessions
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
+ALTER TABLE public.sessions
+  ALTER COLUMN created_at SET DEFAULT NOW(),
+  ALTER COLUMN updated_at SET DEFAULT NOW();
+
 UPDATE public.sessions
 SET created_at = NOW()
 WHERE created_at IS NULL;
@@ -95,9 +101,7 @@ SET updated_at = COALESCE(updated_at, created_at, NOW())
 WHERE updated_at IS NULL;
 
 ALTER TABLE public.sessions
-  ALTER COLUMN created_at SET DEFAULT NOW(),
   ALTER COLUMN created_at SET NOT NULL,
-  ALTER COLUMN updated_at SET DEFAULT NOW(),
   ALTER COLUMN updated_at SET NOT NULL;
 
 DO $$
@@ -179,12 +183,14 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id
 -- ============================================
 -- CONVERSATION_MESSAGES
 -- ============================================
+ALTER TABLE public.conversation_messages
+  ALTER COLUMN created_at SET DEFAULT NOW();
+
 UPDATE public.conversation_messages
 SET created_at = NOW()
 WHERE created_at IS NULL;
 
 ALTER TABLE public.conversation_messages
-  ALTER COLUMN created_at SET DEFAULT NOW(),
   ALTER COLUMN created_at SET NOT NULL;
 
 DO $$
