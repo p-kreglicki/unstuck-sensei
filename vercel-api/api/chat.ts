@@ -79,6 +79,11 @@ type ConsumeChatRateLimitStatus =
   | "rate_limited"
   | "unauthorized";
 
+type ChatRateLimitReservation = {
+  reservationId: string | null;
+  status: ConsumeChatRateLimitStatus;
+};
+
 type AnthropicErrorPayload = {
   error?: {
     message?: string;
@@ -163,10 +168,13 @@ export async function handleChatRequest(request: Request) {
     },
   );
 
-  let rateLimitStatus: ConsumeChatRateLimitStatus;
+  let rateLimitReservation: ChatRateLimitReservation;
 
   try {
-    rateLimitStatus = await consumeRateLimit(scopedClient, normalizedRequest.sessionId);
+    rateLimitReservation = await consumeRateLimit(
+      scopedClient,
+      normalizedRequest.sessionId,
+    );
   } catch (error) {
     console.error("[chat] rate limit reservation failed", {
       error: error instanceof Error ? error.message : String(error),
@@ -181,7 +189,7 @@ export async function handleChatRequest(request: Request) {
     );
   }
 
-  if (rateLimitStatus === "unauthorized") {
+  if (rateLimitReservation.status === "unauthorized") {
     return jsonResponse(
       { error: "Unauthorized. Sign in again and retry." },
       request,
@@ -189,7 +197,7 @@ export async function handleChatRequest(request: Request) {
     );
   }
 
-  if (rateLimitStatus === "invalid_session") {
+  if (rateLimitReservation.status === "invalid_session") {
     return jsonResponse(
       { error: "Save the task first, then try again." },
       request,
@@ -197,11 +205,24 @@ export async function handleChatRequest(request: Request) {
     );
   }
 
-  if (rateLimitStatus === "rate_limited") {
+  if (rateLimitReservation.status === "rate_limited") {
     return jsonResponse(
       { error: "Rate limit reached. Take a breath, then try again soon." },
       request,
       { status: 429 },
+    );
+  }
+
+  if (!rateLimitReservation.reservationId) {
+    console.error("[chat] rate limit reservation missing id", {
+      sessionId: normalizedRequest.sessionId,
+      userId: user.id,
+    });
+
+    return jsonResponse(
+      { error: "Unable to start the chat right now." },
+      request,
+      { status: 500 },
     );
   }
 
@@ -210,11 +231,13 @@ export async function handleChatRequest(request: Request) {
     user.id,
     normalizedRequest.sessionId,
   );
+  const reservationId = rateLimitReservation.reservationId;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
       let bytesWritten = false;
+      let streamResult: StreamAttemptResult | null = null;
 
       const writeEvent = (event: string, data: unknown) => {
         controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
@@ -222,7 +245,7 @@ export async function handleChatRequest(request: Request) {
       };
 
       try {
-        const result = await streamAnthropicResponse({
+        streamResult = await streamAnthropicResponse({
           anthropicApiKey: environment.anthropicApiKey,
           model: environment.anthropicModel,
           recentSessions,
@@ -230,11 +253,36 @@ export async function handleChatRequest(request: Request) {
           writeEvent,
         });
 
-        writeEvent("structured", result.structured);
+        await completeRateLimitReservation(scopedClient, reservationId);
+
+        writeEvent("structured", streamResult.structured);
         writeEvent("done", { ok: true });
       } catch (error) {
         const hadWrittenBytes = bytesWritten;
         const message = formatServerError(error);
+
+        if (!streamResult) {
+          try {
+            await releaseRateLimitReservation(scopedClient, reservationId);
+          } catch (releaseError) {
+            console.error("[chat] failed to release rate limit reservation", {
+              error:
+                releaseError instanceof Error
+                  ? releaseError.message
+                  : String(releaseError),
+              reservationId,
+              sessionId: normalizedRequest.sessionId,
+              userId: user.id,
+            });
+          }
+        } else {
+          console.error("[chat] failed to finalize rate limit reservation", {
+            error: error instanceof Error ? error.message : String(error),
+            reservationId,
+            sessionId: normalizedRequest.sessionId,
+            userId: user.id,
+          });
+        }
 
         writeEvent("error", {
           message,
@@ -431,11 +479,61 @@ export async function consumeRateLimit(
     throw new Error(error.message ?? "Rate limit reservation failed.");
   }
 
-  if (!isConsumeChatRateLimitStatus(data)) {
-    throw new Error("Rate limit reservation returned an invalid status.");
+  if (!isChatRateLimitReservation(data)) {
+    throw new Error("Rate limit reservation returned an invalid payload.");
   }
 
   return data;
+}
+
+async function completeRateLimitReservation(
+  client: {
+    rpc(fn: string, args: Record<string, unknown>): PromiseLike<{
+      data: unknown;
+      error: { message?: string } | null;
+    }>;
+  },
+  reservationId: string,
+) {
+  const { data, error } = await client.rpc(
+    "complete_chat_rate_limit_reservation",
+    {
+      input_log_id: reservationId,
+    },
+  );
+
+  if (error) {
+    throw new Error(error.message ?? "Rate limit finalization failed.");
+  }
+
+  if (data !== true) {
+    throw new Error("Rate limit finalization returned an invalid result.");
+  }
+}
+
+async function releaseRateLimitReservation(
+  client: {
+    rpc(fn: string, args: Record<string, unknown>): PromiseLike<{
+      data: unknown;
+      error: { message?: string } | null;
+    }>;
+  },
+  reservationId: string,
+) {
+  const { data, error } = await client.rpc(
+    "release_chat_rate_limit_reservation",
+    {
+      input_log_id: reservationId,
+    },
+  );
+
+  if (error) {
+    throw new Error(error.message ?? "Rate limit release failed.");
+  }
+
+  if (data !== true) {
+    throw new Error("Rate limit release returned an invalid result.");
+  }
 }
 
 export function normalizeRequestBody(body: unknown): NormalizedRequestBodyResult {
@@ -734,6 +832,19 @@ function isConsumeChatRateLimitStatus(
     value === "invalid_session" ||
     value === "rate_limited" ||
     value === "unauthorized"
+  );
+}
+
+function isChatRateLimitReservation(
+  value: unknown,
+): value is ChatRateLimitReservation {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "status" in value &&
+    isConsumeChatRateLimitStatus(value.status) &&
+    "reservationId" in value &&
+    (typeof value.reservationId === "string" || value.reservationId === null)
   );
 }
 

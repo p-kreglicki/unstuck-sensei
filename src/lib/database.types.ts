@@ -11,20 +11,26 @@ export type Database = {
     Tables: {
       chat_request_logs: {
         Row: {
+          completed_at: string | null;
           created_at: string;
           id: string;
+          reservation_expires_at: string | null;
           session_id: string;
           user_id: string;
         };
         Insert: {
+          completed_at?: string | null;
           created_at?: string;
           id?: string;
+          reservation_expires_at?: string | null;
           session_id: string;
           user_id: string;
         };
         Update: {
+          completed_at?: string | null;
           created_at?: string;
           id?: string;
+          reservation_expires_at?: string | null;
           session_id?: string;
           user_id?: string;
         };
