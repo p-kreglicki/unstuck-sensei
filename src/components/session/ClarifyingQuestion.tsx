@@ -1,3 +1,5 @@
+import { CLARIFYING_ANSWER_MAX_LENGTH } from "../../lib/session-input-limits";
+
 type ClarifyingQuestionProps = {
   answer: string;
   isSubmitting: boolean;
@@ -30,6 +32,7 @@ export function ClarifyingQuestion({
         <textarea
           className="min-h-28 w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-4 text-white outline-none transition placeholder:text-slate-500 focus:border-teal-300"
           disabled={isSubmitting}
+          maxLength={CLARIFYING_ANSWER_MAX_LENGTH}
           onChange={(event) => onAnswerChange(event.currentTarget.value)}
           placeholder="The real snag is..."
           value={answer}

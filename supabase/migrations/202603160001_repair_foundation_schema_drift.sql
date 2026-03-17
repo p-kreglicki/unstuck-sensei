@@ -4,6 +4,10 @@
 -- ============================================
 -- PROFILES
 -- ============================================
+ALTER TABLE public.profiles
+  ALTER COLUMN created_at SET DEFAULT NOW(),
+  ALTER COLUMN updated_at SET DEFAULT NOW();
+
 UPDATE public.profiles
 SET created_at = NOW()
 WHERE created_at IS NULL;
@@ -13,9 +17,7 @@ SET updated_at = NOW()
 WHERE updated_at IS NULL;
 
 ALTER TABLE public.profiles
-  ALTER COLUMN created_at SET DEFAULT NOW(),
   ALTER COLUMN created_at SET NOT NULL,
-  ALTER COLUMN updated_at SET DEFAULT NOW(),
   ALTER COLUMN updated_at SET NOT NULL;
 
 DO $$
@@ -23,8 +25,11 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
-    WHERE conname = 'profiles_display_name_length_check'
-      AND conrelid = 'public.profiles'::regclass
+    WHERE conrelid = 'public.profiles'::regclass
+      AND conname IN (
+        'profiles_display_name_length_check',
+        'profiles_display_name_check'
+      )
   ) THEN
     ALTER TABLE public.profiles
       ADD CONSTRAINT profiles_display_name_length_check
@@ -33,8 +38,19 @@ BEGIN
 END
 $$;
 
-ALTER TABLE public.profiles
-  VALIDATE CONSTRAINT profiles_display_name_length_check;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'profiles_display_name_length_check'
+      AND conrelid = 'public.profiles'::regclass
+  ) THEN
+    ALTER TABLE public.profiles
+      VALIDATE CONSTRAINT profiles_display_name_length_check;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN
@@ -72,6 +88,10 @@ $$;
 ALTER TABLE public.sessions
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
+ALTER TABLE public.sessions
+  ALTER COLUMN created_at SET DEFAULT NOW(),
+  ALTER COLUMN updated_at SET DEFAULT NOW();
+
 UPDATE public.sessions
 SET created_at = NOW()
 WHERE created_at IS NULL;
@@ -81,9 +101,7 @@ SET updated_at = COALESCE(updated_at, created_at, NOW())
 WHERE updated_at IS NULL;
 
 ALTER TABLE public.sessions
-  ALTER COLUMN created_at SET DEFAULT NOW(),
   ALTER COLUMN created_at SET NOT NULL,
-  ALTER COLUMN updated_at SET DEFAULT NOW(),
   ALTER COLUMN updated_at SET NOT NULL;
 
 DO $$
@@ -91,8 +109,11 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
-    WHERE conname = 'sessions_steps_is_array_check'
-      AND conrelid = 'public.sessions'::regclass
+    WHERE conrelid = 'public.sessions'::regclass
+      AND conname IN (
+        'sessions_steps_is_array_check',
+        'sessions_steps_check'
+      )
   ) THEN
     ALTER TABLE public.sessions
       ADD CONSTRAINT sessions_steps_is_array_check
@@ -102,8 +123,11 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
-    WHERE conname = 'sessions_timer_duration_seconds_positive_check'
-      AND conrelid = 'public.sessions'::regclass
+    WHERE conrelid = 'public.sessions'::regclass
+      AND conname IN (
+        'sessions_timer_duration_seconds_positive_check',
+        'sessions_timer_duration_seconds_check'
+      )
   ) THEN
     ALTER TABLE public.sessions
       ADD CONSTRAINT sessions_timer_duration_seconds_positive_check
@@ -112,11 +136,29 @@ BEGIN
 END
 $$;
 
-ALTER TABLE public.sessions
-  VALIDATE CONSTRAINT sessions_steps_is_array_check;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'sessions_steps_is_array_check'
+      AND conrelid = 'public.sessions'::regclass
+  ) THEN
+    ALTER TABLE public.sessions
+      VALIDATE CONSTRAINT sessions_steps_is_array_check;
+  END IF;
 
-ALTER TABLE public.sessions
-  VALIDATE CONSTRAINT sessions_timer_duration_seconds_positive_check;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'sessions_timer_duration_seconds_positive_check'
+      AND conrelid = 'public.sessions'::regclass
+  ) THEN
+    ALTER TABLE public.sessions
+      VALIDATE CONSTRAINT sessions_timer_duration_seconds_positive_check;
+  END IF;
+END
+$$;
 
 DO $$
 BEGIN
@@ -141,12 +183,14 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id
 -- ============================================
 -- CONVERSATION_MESSAGES
 -- ============================================
+ALTER TABLE public.conversation_messages
+  ALTER COLUMN created_at SET DEFAULT NOW();
+
 UPDATE public.conversation_messages
 SET created_at = NOW()
 WHERE created_at IS NULL;
 
 ALTER TABLE public.conversation_messages
-  ALTER COLUMN created_at SET DEFAULT NOW(),
   ALTER COLUMN created_at SET NOT NULL;
 
 DO $$
