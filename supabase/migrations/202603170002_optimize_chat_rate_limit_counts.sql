@@ -69,3 +69,6 @@ BEGIN
   RETURN jsonb_build_object('status', 'allowed', 'reservationId', reservation_id);
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.consume_chat_rate_limit(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.consume_chat_rate_limit(UUID) TO authenticated;

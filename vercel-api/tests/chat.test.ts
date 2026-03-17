@@ -475,7 +475,9 @@ describe("chat route helpers", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.text()).resolves.toContain("event: error");
+    const errorBody = await response.text();
+    expect(errorBody).toContain("event: error");
+    expect(errorBody).toContain('"recoverable":true');
     expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
       input_log_id: "log-1",
     });
@@ -546,6 +548,7 @@ describe("chat route helpers", () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).toContain("The coaching stream failed unexpectedly.");
+    expect(body).toContain('"recoverable":false');
     expect(body).not.toContain('relation "private.audit" does not exist');
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "[chat] unexpected streaming failure",
