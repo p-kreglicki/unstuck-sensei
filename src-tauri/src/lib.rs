@@ -98,13 +98,20 @@ pub(crate) fn execute_detection_effects(
             .iter()
             .any(|effect| matches!(effect, DetectionRuntimeEffect::EmitStateChanged(_)));
 
-    execute_runtime_effects(app, effects)?;
+    let effect_error = execute_runtime_effects(app, effects).err();
 
-    if should_sync_tray {
-        sync_tray_menu(app)?;
+    let tray_error = should_sync_tray
+        .then(|| sync_tray_menu(app))
+        .transpose()
+        .err();
+
+    match (effect_error, tray_error) {
+        (None, None) => Ok(()),
+        (Some(error), None) | (None, Some(error)) => Err(error),
+        (Some(effect_error), Some(tray_error)) => Err(format!(
+            "{effect_error}; failed to sync tray menu: {tray_error}"
+        )),
     }
-
-    Ok(())
 }
 
 fn show_main_window(app: &AppHandle<Wry>, window_visible: &AtomicBool) {
