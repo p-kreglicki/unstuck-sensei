@@ -2,8 +2,8 @@
 status: resolved
 priority: p1
 tags: [security, rate-limiting, input-validation, rust, concurrency, sse, vercel-api, supabase, phase-3]
-related_issues: ["048", "049", "062", "078", "080"]
-related_prs: [12, 13, 14]
+related_issues: ["048", "049", "062", "068", "078", "080", "081"]
+related_prs: [12, 13, 14, 15]
 resolved_date: 2026-03-17
 modules: [vercel-api, src-tauri/detection, shared/session]
 ---
@@ -73,7 +73,7 @@ The server made the Anthropic request but delegated message persistence to the u
 
 Replaced with a server-controlled `chat_request_logs` table and `consume_chat_rate_limit()` RPC:
 
-1. Server calls `consume_chat_rate_limit(session_id)` **before** any Anthropic request.
+1. Server calls `consume_chat_rate_limit(session_id)` before any Anthropic request.
 2. The function uses `pg_advisory_xact_lock` to serialize per-user quota checks.
 3. If under limit, it atomically inserts a log row and returns `allowed`.
 4. If over limit, it returns `rate_limited` and the API responds 429.
@@ -130,7 +130,7 @@ GRANT EXECUTE ON FUNCTION consume_chat_rate_limit(UUID) TO authenticated;
 
 ### Symptom
 
-After a panic in the Rust detection runtime, the `std::sync::Mutex<DetectionState>` stayed permanently poisoned. The recovery helper rebuilt state on each lock acquisition, but because `clear_poison()` was never called, **every subsequent lock** re-ran recovery — repeatedly wiping timers, nudge state, and app-switch history.
+After a panic in the Rust detection runtime, the `std::sync::Mutex<DetectionState>` stayed permanently poisoned. The recovery helper rebuilt state on each lock acquisition, but because `clear_poison()` was never called, every subsequent lock re-ran recovery — repeatedly wiping timers, nudge state, and app-switch history.
 
 ### Root Cause
 
@@ -149,7 +149,7 @@ fn recover_detection_state_lock(
         Err(poisoned) => {
             let mut guard = poisoned.into_inner();
             *guard = DetectionState::from_config(/* ... */);
-            mutex.clear_poison();  // CRITICAL: clear the poison bit
+            mutex.clear_poison();
             guard
         }
     }
@@ -168,11 +168,11 @@ All command/tray/platform entry points now use this centralized helper. Tests ve
 
 ### Symptom
 
-After commit `dba8936`, the SSE `error` payload derived `recoverable` only from `AnthropicRequestError.retryable`. Plain `RetryableError` instances (e.g., stream ended before structured output delimiter) were marked `recoverable: false`, causing the client to hide the retry button for transient failures.
+After commit `dba8936`, the SSE `error` payload derived `recoverable` only from `AnthropicRequestError.retryable`. Plain `RetryableError` instances (for example, stream ended before structured output delimiter) were marked `recoverable: false`, causing the client to hide the retry button for transient failures.
 
 ### Root Cause
 
-The error class hierarchy (`RetryableError` base → `AnthropicRequestError` subclass) was correct for internal retry logic, but the SSE signaling code checked `instanceof AnthropicRequestError` instead of `instanceof RetryableError`. This narrowed the client-facing signal to only Anthropic HTTP errors, missing application-level retryable failures.
+The error class hierarchy (`RetryableError` base -> `AnthropicRequestError` subclass) was correct for internal retry logic, but the SSE signaling code checked `instanceof AnthropicRequestError` instead of `instanceof RetryableError`. This narrowed the client-facing signal to only Anthropic HTTP errors, missing application-level retryable failures.
 
 ### Solution (commit `4ce54a4`)
 
@@ -209,17 +209,17 @@ recoverable: error instanceof RetryableError && error.retryable
 - Test recovery completeness by verifying the second lock, not just the first.
 
 ### General Pattern
-These issues share a root theme: **implementation details became implicit security/reliability contracts**. Parameter names, client persistence, error class hierarchies, and mutex guard types all silently defined system behavior in ways that diverged from intent. The fix in every case was making the contract explicit: hardcoded constants, server-controlled counters, base-class checks, and `clear_poison()` calls.
+
+These issues share a root theme: implementation details became implicit security/reliability contracts. Parameter names, client persistence, error class hierarchies, and mutex guard types all silently defined system behavior in ways that diverged from intent. The fix in every case was making the contract explicit: hardcoded constants, server-controlled counters, base-class checks, and `clear_poison()` calls.
 
 ---
 
-## Remaining Gaps (Open)
+## Remaining Gaps
 
-Identified during post-fix security review. None are exploitable for data access, but two allow rate-limit evasion.
+GAP 1 (`sessionId` UUID validation) was resolved in follow-up work on 2026-03-18 via the API-side UUID check tracked by issue `068`. The remaining gaps below are the still-open follow-ups from this postmortem.
 
 | ID | Finding | Severity |
 |----|---------|----------|
-| GAP 1 | `sessionId` not validated as UUID format — garbage input returns 500 instead of 400 | Medium |
-| GAP 4 | `release_chat_rate_limit_reservation` callable by any authenticated user — a client can delete its own pending log rows to reset the rate counter | Medium |
+| GAP 2 | `release_chat_rate_limit_reservation` callable by any authenticated user — a client can delete its own pending log rows to reset the rate counter | Medium |
 | GAP 3 | Dead INSERT RLS policy on `chat_request_logs` — unused surface area since `SECURITY DEFINER` function handles all inserts | Low |
-| GAP 5 | `consume_chat_rate_limit` uses `SECURITY DEFINER` to allow cleanup `DELETE` of expired reservations; this escalation is intentional (function still checks `auth.uid()` internally and locks `search_path`) but undocumented in migrations | Informational |
+| GAP 4 | `consume_chat_rate_limit` uses `SECURITY DEFINER` to allow cleanup `DELETE` of expired reservations; this escalation is intentional (function still checks `auth.uid()` internally and locks `search_path`) but undocumented in migrations | Informational |
