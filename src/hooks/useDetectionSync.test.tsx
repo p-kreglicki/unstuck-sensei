@@ -126,4 +126,35 @@ describe("DetectionSyncBridge", () => {
       });
     });
   });
+
+  it("does not sync stale signed-in config when the profile query fails", async () => {
+    const consoleWarnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    useAuthMock.mockReturnValue({
+      session: {
+        user: {
+          id: "user-1",
+        },
+      },
+    });
+    maybeSingleMock.mockResolvedValue({
+      data: null,
+      error: new Error("profiles lookup failed"),
+    });
+
+    render(<DetectionSyncBridge />);
+
+    await waitFor(() => {
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        "[detection] sync failed:",
+        expect.any(Error),
+      );
+    });
+
+    expect(syncConfigMock).not.toHaveBeenCalled();
+
+    consoleWarnSpy.mockRestore();
+  });
 });
