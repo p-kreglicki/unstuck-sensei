@@ -603,40 +603,33 @@ impl DetectionState {
     }
 
     fn disable(&mut self, now: Instant) -> Vec<DetectionRuntimeEffect> {
-        if self.status == DetectionStatus::Disabled {
-            self.notification_remaining = None;
-            self.cooldown_remaining = None;
-            self.pause_remaining = None;
-            self.app_switches.clear();
-            self.last_foreground_bundle_id = None;
-            self.last_stuck_detected_at = None;
-            self.suppression_reasons
-                .retain(|reason| *reason == SuppressionReason::SignedOut);
-            return Vec::new();
-        }
+        let should_emit_state_change = if self.status == DetectionStatus::Disabled {
+            false
+        } else {
+            let result = transition(self.status, TransitionEvent::Disabled);
+            self.status = result.next_status;
+            result
+                .side_effects
+                .contains(&TransitionSideEffect::EmitStateChanged)
+        };
 
-        let result = transition(self.status, TransitionEvent::Disabled);
-        self.status = result.next_status;
+        self.clear_disabled_runtime_state();
 
-        self.app_switches.clear();
-        self.cooldown_remaining = None;
+        should_emit_state_change
+            .then(|| DetectionRuntimeEffect::EmitStateChanged(self.status_response_at(now)))
+            .into_iter()
+            .collect()
+    }
+
+    fn clear_disabled_runtime_state(&mut self) {
         self.notification_remaining = None;
+        self.cooldown_remaining = None;
         self.pause_remaining = None;
+        self.app_switches.clear();
+        self.last_foreground_bundle_id = None;
         self.last_stuck_detected_at = None;
         self.suppression_reasons
             .retain(|reason| *reason == SuppressionReason::SignedOut);
-
-        let mut effects = Vec::new();
-
-        for side_effect in result.side_effects {
-            if side_effect == TransitionSideEffect::EmitStateChanged {
-                effects.push(DetectionRuntimeEffect::EmitStateChanged(
-                    self.status_response_at(now),
-                ));
-            }
-        }
-
-        effects
     }
 }
 
@@ -741,22 +734,69 @@ pub fn execute_runtime_effects(
     app: &AppHandle<Wry>,
     effects: Vec<DetectionRuntimeEffect>,
 ) -> Result<(), String> {
-    for effect in effects {
-        match effect {
-            DetectionRuntimeEffect::SendNotification => app
-                .notification()
+    execute_runtime_effects_with(
+        effects,
+        || {
+            app.notification()
                 .builder()
                 .title(NOTIFICATION_TITLE)
                 .body(NOTIFICATION_BODY)
                 .show()
-                .map_err(|error| error.to_string())?,
-            DetectionRuntimeEffect::EmitStateChanged(payload) => app
-                .emit(DETECTION_STATE_CHANGED_EVENT, payload)
-                .map_err(|error| error.to_string())?,
+                .map_err(|error| error.to_string())
+        },
+        |payload| {
+            app.emit(DETECTION_STATE_CHANGED_EVENT, payload)
+                .map_err(|error| error.to_string())
+        },
+    )
+}
+
+fn execute_runtime_effects_with<Notify, Emit>(
+    effects: Vec<DetectionRuntimeEffect>,
+    mut send_notification: Notify,
+    mut emit_state_changed: Emit,
+) -> Result<(), String>
+where
+    Notify: FnMut() -> Result<(), String>,
+    Emit: FnMut(DetectionStatusResponse) -> Result<(), String>,
+{
+    let mut first_error = None;
+
+    for effect in effects {
+        let result = match effect {
+            DetectionRuntimeEffect::SendNotification => send_notification().map_err(|error| {
+                format_runtime_effect_error(&mut first_error, "send detection notification", error)
+            }),
+            DetectionRuntimeEffect::EmitStateChanged(payload) => emit_state_changed(payload)
+                .map_err(|error| {
+                    format_runtime_effect_error(
+                        &mut first_error,
+                        "emit detection state change",
+                        error,
+                    )
+                }),
+        };
+
+        if result.is_err() {
+            continue;
         }
     }
 
-    Ok(())
+    first_error.map_or(Ok(()), Err)
+}
+
+fn format_runtime_effect_error(
+    first_error: &mut Option<String>,
+    action: &str,
+    error: String,
+) -> String {
+    eprintln!("[detection] failed to {action}: {error}");
+
+    if first_error.is_none() {
+        *first_error = Some(error.clone());
+    }
+
+    error
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -795,7 +835,7 @@ impl From<&DetectionState> for DetectionDebugResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{panic::AssertUnwindSafe, sync::Mutex};
+    use std::{cell::RefCell, panic::AssertUnwindSafe, sync::Mutex};
 
     fn signed_in_state(status: DetectionStatus) -> DetectionState {
         let mut state = DetectionState::new();
@@ -848,6 +888,9 @@ mod tests {
 
             assert_eq!(state.status, status);
             assert_eq!(state.sensitivity, Sensitivity::High);
+            assert_eq!(state.pause_remaining, Some(Duration::from_secs(123)));
+            assert_eq!(state.cooldown_remaining, Some(Duration::from_secs(456)));
+            assert_eq!(state.notification_remaining, Some(Duration::from_secs(12)));
             assert!(effects.is_empty());
         }
     }
@@ -959,6 +1002,35 @@ mod tests {
     }
 
     #[test]
+    fn resume_from_paused_disables_when_signed_out_or_disabled() {
+        let now = Instant::now();
+
+        for (signed_in, enabled) in [(false, true), (true, false)] {
+            let mut state = signed_in_state(DetectionStatus::Paused);
+            state.signed_in = signed_in;
+            state.enabled = enabled;
+            state.pause_remaining = Some(Duration::from_secs(50));
+
+            if !signed_in {
+                state
+                    .suppression_reasons
+                    .insert(SuppressionReason::SignedOut);
+            }
+
+            let effects = state.resume_at(now);
+
+            assert_eq!(state.status, DetectionStatus::Disabled);
+            assert_eq!(state.pause_remaining, None);
+            assert_eq!(state.cooldown_remaining, None);
+            assert_eq!(state.notification_remaining, None);
+            assert!(state.app_switches.is_empty());
+            assert_eq!(state.last_foreground_bundle_id, None);
+            assert_eq!(state.last_stuck_detected_at, None);
+            assert_state_changed(&effects, DetectionStatus::Disabled, false);
+        }
+    }
+
+    #[test]
     fn pause_ignores_invalid_states_and_keeps_allowed_ones() {
         let now = Instant::now();
         let mut disabled = DetectionState::new();
@@ -986,6 +1058,23 @@ mod tests {
             assert_eq!(state.notification_remaining, None);
             assert_state_changed(&effects, DetectionStatus::Paused, false);
         }
+    }
+
+    #[test]
+    fn pause_is_idempotent_while_already_paused() {
+        let now = Instant::now();
+        let mut state = signed_in_state(DetectionStatus::Paused);
+        state.pause_remaining = Some(Duration::from_secs(123));
+        state.cooldown_remaining = Some(Duration::from_secs(456));
+        state.notification_remaining = Some(Duration::from_secs(12));
+
+        let effects = state.pause_at(now);
+
+        assert_eq!(state.status, DetectionStatus::Paused);
+        assert_eq!(state.pause_remaining, Some(Duration::from_secs(123)));
+        assert_eq!(state.cooldown_remaining, Some(Duration::from_secs(456)));
+        assert_eq!(state.notification_remaining, Some(Duration::from_secs(12)));
+        assert!(effects.is_empty());
     }
 
     #[test]
@@ -1254,6 +1343,27 @@ mod tests {
     }
 
     #[test]
+    fn pausing_and_resuming_from_cooldown_preserves_existing_cooldown_timer() {
+        let now = Instant::now();
+        let mut state = signed_in_state(DetectionStatus::Cooldown);
+        state.cooldown_remaining = Some(Duration::from_secs(70));
+
+        let pause_effects = state.pause_at(now);
+
+        assert_eq!(state.status, DetectionStatus::Paused);
+        assert_eq!(state.pause_remaining, Some(PAUSE_DURATION));
+        assert_eq!(state.cooldown_remaining, Some(Duration::from_secs(70)));
+        assert_state_changed(&pause_effects, DetectionStatus::Paused, false);
+
+        let resume_effects = state.resume_at(now + Duration::from_secs(5));
+
+        assert_eq!(state.status, DetectionStatus::Active);
+        assert_eq!(state.pause_remaining, None);
+        assert_eq!(state.cooldown_remaining, Some(Duration::from_secs(70)));
+        assert_state_changed(&resume_effects, DetectionStatus::Active, false);
+    }
+
+    #[test]
     fn cooldown_expiry_returns_to_active_and_clears_nudge() {
         let now = Instant::now();
         let mut state = signed_in_state(DetectionStatus::Cooldown);
@@ -1316,5 +1426,34 @@ mod tests {
         assert_eq!(state.status, DetectionStatus::Cooldown);
         assert_eq!(state.last_stuck_detected_at, None);
         assert_state_changed(&effects, DetectionStatus::Cooldown, false);
+    }
+
+    #[test]
+    fn runtime_effect_execution_continues_after_notification_failures() {
+        let calls = RefCell::new(Vec::new());
+        let payload = DetectionStatusResponse {
+            status: DetectionStatus::Notifying,
+            resume_in_seconds: None,
+            nudge_active: true,
+        };
+
+        let result = execute_runtime_effects_with(
+            vec![
+                DetectionRuntimeEffect::SendNotification,
+                DetectionRuntimeEffect::EmitStateChanged(payload.clone()),
+            ],
+            || {
+                calls.borrow_mut().push("notify");
+                Err("notification failed".to_string())
+            },
+            |emitted_payload| {
+                calls.borrow_mut().push("emit");
+                assert_eq!(emitted_payload, payload);
+                Ok(())
+            },
+        );
+
+        assert_eq!(*calls.borrow(), vec!["notify", "emit"]);
+        assert_eq!(result, Err("notification failed".to_string()));
     }
 }
