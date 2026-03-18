@@ -27,7 +27,7 @@ vi.mock("./useAuth", () => ({
 }));
 
 vi.mock("./useChat", () => ({
-  useChat: () => useChatMock(),
+  useChat: (input: unknown) => useChatMock(input),
 }));
 
 vi.mock("../lib/session-records", () => ({
@@ -90,6 +90,9 @@ function createChatState() {
 describe("useSessionFlow", () => {
   beforeEach(() => {
     useAuthMock.mockReturnValue({
+      session: {
+        access_token: "token-123",
+      },
       user: {
         id: "user-1",
       },
@@ -155,6 +158,11 @@ describe("useSessionFlow", () => {
 
     await waitFor(() => {
       expect(result.current.isBooting).toBe(false);
+    });
+
+    expect(useChatMock).toHaveBeenCalledWith({
+      accessToken: "token-123",
+      sessionId: "session-1",
     });
 
     act(() => {

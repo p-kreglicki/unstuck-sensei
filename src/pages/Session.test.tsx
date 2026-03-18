@@ -21,7 +21,7 @@ vi.mock("../hooks/useAuth", () => ({
 }));
 
 vi.mock("../hooks/useChat", () => ({
-  useChat: () => useChatMock(),
+  useChat: (input: unknown) => useChatMock(input),
 }));
 
 vi.mock("../lib/session-records", () => ({
@@ -38,6 +38,9 @@ vi.mock("../lib/session-records", () => ({
 describe("Session", () => {
   beforeEach(() => {
     useAuthMock.mockReturnValue({
+      session: {
+        access_token: "token-123",
+      },
       user: {
         id: "user-1",
       },
