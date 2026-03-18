@@ -290,6 +290,28 @@ describe("chat route helpers", () => {
     });
   });
 
+  it("accepts uppercase UUID session ids", () => {
+    expect(
+      normalizeRequestBody({
+        energyLevel: "medium",
+        mode: "initial",
+        sessionId: "123E4567-E89B-12D3-A456-426614174000",
+        source: "manual",
+        stuckOn: "Ship the first build",
+      }),
+    ).toEqual({
+      kind: "success",
+      value: {
+        clarifyingAnswer: undefined,
+        energyLevel: "medium",
+        mode: "initial",
+        sessionId: "123E4567-E89B-12D3-A456-426614174000",
+        source: "manual",
+        stuckOn: "Ship the first build",
+      },
+    });
+  });
+
   it("rejects non-UUID sessionId values before any Supabase calls", async () => {
     const response = await handleChatRequest(
       new Request("https://example.com/api/chat", {
@@ -313,6 +335,84 @@ describe("chat route helpers", () => {
       error: "Invalid chat request payload.",
     });
     expect(createClientMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects near-valid UUID session ids with non-hex characters", () => {
+    expect(
+      normalizeRequestBody({
+        energyLevel: "medium",
+        mode: "initial",
+        sessionId: "123e4567-e89b-12d3-a456-42661417400g",
+        source: "manual",
+        stuckOn: "Ship the first build",
+      }),
+    ).toEqual({
+      kind: "error",
+      message: "Invalid chat request payload.",
+    });
+  });
+
+  it("accepts requests at the exact Content-Length boundary", async () => {
+    createClientMock.mockReturnValueOnce({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: "expired" },
+        }),
+      },
+    });
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: VALID_SESSION_ID,
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Length": "8192",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(createClientMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts requests without a Content-Length header", async () => {
+    createClientMock.mockReturnValueOnce({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: "expired" },
+        }),
+      },
+    });
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: VALID_SESSION_ID,
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(createClientMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects oversized requests from Content-Length before parsing JSON", async () => {
@@ -465,20 +565,22 @@ describe("chat route helpers", () => {
 
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            error: {
-              message: "Anthropic is unavailable.",
-              type: "api_error",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: {
+                message: "Anthropic is unavailable.",
+                type: "api_error",
+              },
+            }),
+            {
+              headers: {
+                "Content-Type": "application/json",
+              },
+              status: 503,
             },
-          }),
-          {
-            headers: {
-              "Content-Type": "application/json",
-            },
-            status: 503,
-          },
+          ),
         ),
       ),
     );
@@ -503,6 +605,95 @@ describe("chat route helpers", () => {
     expect(response.status).toBe(200);
     const errorBody = await response.text();
     expect(errorBody).toContain("event: error");
+    expect(errorBody).toContain(
+      "The coaching service is temporarily unavailable. Try again soon.",
+    );
+    expect(errorBody).not.toContain("Anthropic is unavailable.");
+    expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
+      input_log_id: "log-1",
+    });
+  });
+
+  it("sanitizes Anthropic request errors before sending them to the SSE client", async () => {
+    const getUserMock = vi.fn().mockResolvedValue({
+      data: { user: { id: "user-1" } },
+      error: null,
+    });
+    const rpcMock = vi.fn(async (fn: string) => {
+      if (fn === "consume_chat_rate_limit") {
+        return {
+          data: {
+            reservationId: "log-1",
+            status: "allowed",
+          },
+          error: null,
+        };
+      }
+
+      if (fn === "release_chat_rate_limit_reservation") {
+        return {
+          data: true,
+          error: null,
+        };
+      }
+
+      throw new Error(`Unexpected RPC ${fn}`);
+    });
+
+    createClientMock
+      .mockReturnValueOnce({
+        auth: {
+          getUser: getUserMock,
+        },
+      })
+      .mockReturnValueOnce({
+        ...createSessionsFromMock(),
+        rpc: rpcMock,
+      });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "model: claude-3-5-haiku-latest",
+              type: "invalid_request_error",
+            },
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+            status: 400,
+          },
+        ),
+      ),
+    );
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: VALID_SESSION_ID,
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain(
+      "The coaching request could not be completed right now.",
+    );
+    expect(body).not.toContain("model: claude-3-5-haiku-latest");
     expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
       input_log_id: "log-1",
     });
