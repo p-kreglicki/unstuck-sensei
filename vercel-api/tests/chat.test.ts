@@ -699,6 +699,91 @@ describe("chat route helpers", () => {
     });
   });
 
+  it("surfaces a busy message when Anthropic rate-limits the request", async () => {
+    const getUserMock = vi.fn().mockResolvedValue({
+      data: { user: { id: "user-1" } },
+      error: null,
+    });
+    const rpcMock = vi.fn(async (fn: string) => {
+      if (fn === "consume_chat_rate_limit") {
+        return {
+          data: {
+            reservationId: "log-1",
+            status: "allowed",
+          },
+          error: null,
+        };
+      }
+
+      if (fn === "release_chat_rate_limit_reservation") {
+        return {
+          data: true,
+          error: null,
+        };
+      }
+
+      throw new Error(`Unexpected RPC ${fn}`);
+    });
+
+    createClientMock
+      .mockReturnValueOnce({
+        auth: {
+          getUser: getUserMock,
+        },
+      })
+      .mockReturnValueOnce({
+        ...createSessionsFromMock(),
+        rpc: rpcMock,
+      });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "rate limit exceeded",
+              type: "rate_limit_error",
+            },
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+            status: 429,
+          },
+        ),
+      ),
+    );
+
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: VALID_SESSION_ID,
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain(
+      "The coaching service is busy right now. Try again soon.",
+    );
+    expect(body).not.toContain("rate limit exceeded");
+    expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
+      input_log_id: "log-1",
+    });
+  });
+
   it("marks missing structured output as recoverable when nothing reached the client", async () => {
     const getUserMock = vi.fn().mockResolvedValue({
       data: { user: { id: "user-1" } },
