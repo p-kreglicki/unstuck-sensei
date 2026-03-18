@@ -7,9 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import type { Database } from "../lib/database.types";
 import { supabase } from "../lib/supabase";
-import { useDetection } from "./useDetection";
 
 type AuthResult = {
   error: Error | null;
@@ -28,43 +26,11 @@ type AuthContextValue = {
   user: User | null;
 };
 
-type DetectionSensitivity = NonNullable<
-  Database["public"]["Tables"]["profiles"]["Row"]["detection_sensitivity"]
->;
-
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-async function loadDetectionConfig(userId: string): Promise<{
-  enabled: boolean;
-  sensitivity: DetectionSensitivity;
-}> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("detection_enabled, detection_sensitivity")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  const profile = data as
-    | {
-        detection_enabled: boolean | null;
-        detection_sensitivity: DetectionSensitivity | null;
-      }
-    | null;
-
-  return {
-    enabled: profile?.detection_enabled ?? true,
-    sensitivity: profile?.detection_sensitivity ?? "medium",
-  };
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { syncConfig } = useDetection();
   const user = session?.user ?? null;
 
   useEffect(() => {
@@ -104,46 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function syncDetectionConfig() {
-      try {
-        if (!session?.user.id) {
-          await syncConfig({
-            signedIn: false,
-            enabled: false,
-            sensitivity: "medium",
-          });
-          return;
-        }
-
-        const { enabled, sensitivity } = await loadDetectionConfig(session.user.id);
-
-        if (cancelled) {
-          return;
-        }
-
-        await syncConfig({
-          signedIn: true,
-          enabled,
-          sensitivity,
-        });
-      } catch (error) {
-        // Detection sync is helpful for desktop UX but should not block auth flows.
-        if (import.meta.env.DEV) {
-          console.warn("[detection] sync failed:", error);
-        }
-      }
-    }
-
-    void syncDetectionConfig();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.user.id, syncConfig]);
 
   async function maybeEnableAutostart() {
     try {

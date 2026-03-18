@@ -30,11 +30,8 @@ pub fn sync_detection_config(
     state: State<'_, Mutex<DetectionState>>,
     signed_in: bool,
     enabled: bool,
-    sensitivity: String,
+    sensitivity: Sensitivity,
 ) -> Result<(), String> {
-    let sensitivity = Sensitivity::from_input(&sensitivity)
-        .ok_or_else(|| format!("Unsupported sensitivity: {sensitivity}"))?;
-
     let effects = with_detection_state(&state, |state| {
         state.sync_config(signed_in, enabled, sensitivity)
     })?;

@@ -7,7 +7,7 @@ use std::{
 };
 
 use chrono::{Local, NaiveDate};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Wry};
 use tauri_plugin_notification::NotificationExt;
 
@@ -51,7 +51,7 @@ pub enum DetectionStatus {
     Suppressed,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Sensitivity {
     Low,
@@ -66,15 +66,6 @@ impl Default for Sensitivity {
 }
 
 impl Sensitivity {
-    pub fn from_input(value: &str) -> Option<Self> {
-        match value {
-            "low" => Some(Self::Low),
-            "medium" => Some(Self::Medium),
-            "high" => Some(Self::High),
-            _ => None,
-        }
-    }
-
     fn threshold(self) -> usize {
         match self {
             Self::Low => 12,
