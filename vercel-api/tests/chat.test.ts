@@ -15,6 +15,8 @@ import chatRoute, {
   OutputAccumulator,
 } from "../api/chat.js";
 
+const VALID_SESSION_ID = "123e4567-e89b-12d3-a456-426614174000";
+
 function createSessionsFromMock() {
   const limit = vi.fn().mockResolvedValue({
     data: [],
@@ -76,7 +78,7 @@ describe("chat route helpers", () => {
         body: JSON.stringify({
           energyLevel: "medium",
           mode: "initial",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "Ship the first build",
         }),
@@ -127,7 +129,7 @@ describe("chat route helpers", () => {
         body: JSON.stringify({
           energyLevel: "medium",
           mode: "initial",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "Ship the first build",
         }),
@@ -153,7 +155,7 @@ describe("chat route helpers", () => {
         body: JSON.stringify({
           energyLevel: "medium",
           mode: "initial",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "Ship the first build",
         }),
@@ -174,7 +176,7 @@ describe("chat route helpers", () => {
         body: JSON.stringify({
           energyLevel: "medium",
           mode: "initial",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "x".repeat(2001),
         }),
@@ -200,7 +202,7 @@ describe("chat route helpers", () => {
           clarifyingAnswer: "x".repeat(1001),
           energyLevel: "medium",
           mode: "clarification",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "Ship the first build",
         }),
@@ -247,7 +249,7 @@ describe("chat route helpers", () => {
         body: JSON.stringify({
           energyLevel: "medium",
           mode: "initial",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "Ship the first build",
         }),
@@ -261,7 +263,7 @@ describe("chat route helpers", () => {
 
     expect(response.status).toBe(429);
     expect(rpcMock).toHaveBeenCalledWith("consume_chat_rate_limit", {
-      input_session_id: "session-1",
+      input_session_id: VALID_SESSION_ID,
     });
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -298,7 +300,7 @@ describe("chat route helpers", () => {
         clarifyingAnswer: "  Need the first message drafted.  ",
         energyLevel: "medium",
         mode: "clarification",
-        sessionId: "  session-1  ",
+        sessionId: `  ${VALID_SESSION_ID}  `,
         source: "manual",
         stuckOn: "  Ship the first build  ",
       }),
@@ -308,11 +310,62 @@ describe("chat route helpers", () => {
         clarifyingAnswer: "Need the first message drafted.",
         energyLevel: "medium",
         mode: "clarification",
-        sessionId: "session-1",
+        sessionId: VALID_SESSION_ID,
         source: "manual",
         stuckOn: "Ship the first build",
       },
     });
+  });
+
+  it("rejects non-UUID sessionId values before any Supabase calls", async () => {
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: "session-1",
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid chat request payload.",
+    });
+    expect(createClientMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized requests from Content-Length before parsing JSON", async () => {
+    const response = await handleChatRequest(
+      new Request("https://example.com/api/chat", {
+        body: JSON.stringify({
+          energyLevel: "medium",
+          mode: "initial",
+          sessionId: VALID_SESSION_ID,
+          source: "manual",
+          stuckOn: "Ship the first build",
+        }),
+        headers: {
+          Authorization: "Bearer token",
+          "Content-Length": "8193",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      error: "Request body must be 8192 bytes or fewer.",
+    });
+    expect(createClientMock).not.toHaveBeenCalled();
   });
 
   it("surfaces invalid RPC responses from the rate-limit reservation helper", async () => {
@@ -324,7 +377,7 @@ describe("chat route helpers", () => {
             error: null,
           }),
         },
-        "session-1",
+        VALID_SESSION_ID,
       ),
     ).rejects.toThrow("invalid payload");
   });
@@ -381,7 +434,7 @@ describe("chat route helpers", () => {
         body: JSON.stringify({
           energyLevel: "medium",
           mode: "initial",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "Ship the first build",
         }),
@@ -462,7 +515,7 @@ describe("chat route helpers", () => {
         body: JSON.stringify({
           energyLevel: "medium",
           mode: "initial",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "Ship the first build",
         }),
@@ -539,7 +592,7 @@ describe("chat route helpers", () => {
         body: JSON.stringify({
           energyLevel: "medium",
           mode: "initial",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "Ship the first build",
         }),
@@ -616,7 +669,7 @@ describe("chat route helpers", () => {
         body: JSON.stringify({
           energyLevel: "medium",
           mode: "initial",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "Ship the first build",
         }),
@@ -690,7 +743,7 @@ describe("chat route helpers", () => {
         body: JSON.stringify({
           energyLevel: "medium",
           mode: "initial",
-          sessionId: "session-1",
+          sessionId: VALID_SESSION_ID,
           source: "manual",
           stuckOn: "Ship the first build",
         }),
@@ -712,7 +765,7 @@ describe("chat route helpers", () => {
       expect.objectContaining({
         error: 'relation "private.audit" does not exist',
         reservationId: "log-1",
-        sessionId: "session-1",
+        sessionId: VALID_SESSION_ID,
         userId: "user-1",
       }),
     );
