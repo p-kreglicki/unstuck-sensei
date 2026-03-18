@@ -324,15 +324,15 @@ impl DetectionState {
 
         self.pause_remaining = None;
 
-        let event = if !self.signed_in || !self.enabled {
-            TransitionEvent::Disabled
-        } else if self.has_runtime_suppression() {
-            TransitionEvent::ResumeRequestedWhileSuppressed
-        } else {
-            TransitionEvent::ResumeRequested
-        };
+        if !self.signed_in || !self.enabled {
+            return self.apply_transition(TransitionEvent::Disabled, now);
+        }
 
-        self.apply_transition(event, now)
+        self.restore_post_pause_state_at(
+            now,
+            TransitionEvent::ResumeRequested,
+            TransitionEvent::ResumeRequestedWhileSuppressed,
+        )
     }
 
     fn dismiss_nudge_at(&mut self, now: Instant) -> Vec<DetectionRuntimeEffect> {
@@ -424,14 +424,11 @@ impl DetectionState {
 
             if remaining.is_zero() {
                 self.pause_remaining = None;
-
-                let event = if self.has_runtime_suppression() {
-                    TransitionEvent::PauseExpiredWhileSuppressed
-                } else {
-                    TransitionEvent::PauseExpired
-                };
-
-                effects.extend(self.apply_transition(event, now));
+                effects.extend(self.restore_post_pause_state_at(
+                    now,
+                    TransitionEvent::PauseExpired,
+                    TransitionEvent::PauseExpiredWhileSuppressed,
+                ));
             }
         }
 
@@ -462,6 +459,28 @@ impl DetectionState {
         }
 
         effects
+    }
+
+    fn restore_post_pause_state_at(
+        &mut self,
+        now: Instant,
+        active_event: TransitionEvent,
+        suppressed_event: TransitionEvent,
+    ) -> Vec<DetectionRuntimeEffect> {
+        if self.cooldown_remaining.is_some() {
+            self.status = DetectionStatus::Cooldown;
+            return vec![DetectionRuntimeEffect::EmitStateChanged(
+                self.status_response_at(now),
+            )];
+        }
+
+        let event = if self.has_runtime_suppression() {
+            suppressed_event
+        } else {
+            active_event
+        };
+
+        self.apply_transition(event, now)
     }
 
     fn refresh_suppression_state(&mut self, now: Instant) -> Vec<DetectionRuntimeEffect> {
@@ -1343,7 +1362,7 @@ mod tests {
     }
 
     #[test]
-    fn pausing_and_resuming_from_cooldown_preserves_existing_cooldown_timer() {
+    fn pausing_and_resuming_from_cooldown_restores_cooldown_state() {
         let now = Instant::now();
         let mut state = signed_in_state(DetectionStatus::Cooldown);
         state.cooldown_remaining = Some(Duration::from_secs(70));
@@ -1357,10 +1376,39 @@ mod tests {
 
         let resume_effects = state.resume_at(now + Duration::from_secs(5));
 
-        assert_eq!(state.status, DetectionStatus::Active);
+        assert_eq!(state.status, DetectionStatus::Cooldown);
         assert_eq!(state.pause_remaining, None);
         assert_eq!(state.cooldown_remaining, Some(Duration::from_secs(70)));
-        assert_state_changed(&resume_effects, DetectionStatus::Active, false);
+        assert_eq!(
+            state
+                .status_response_at(now + Duration::from_secs(5))
+                .resume_in_seconds,
+            Some(70)
+        );
+        assert_state_changed(&resume_effects, DetectionStatus::Cooldown, false);
+    }
+
+    #[test]
+    fn pause_expiry_from_cooldown_restores_cooldown_state() {
+        let now = Instant::now();
+        let mut state = signed_in_state(DetectionStatus::Paused);
+        state.last_tick = now;
+        state.pause_remaining = Some(Duration::from_secs(5));
+        state.cooldown_remaining = Some(Duration::from_secs(70));
+
+        let effects =
+            state.update_idle_seconds_at(30, now + Duration::from_secs(5), state.today_date);
+
+        assert_eq!(state.status, DetectionStatus::Cooldown);
+        assert_eq!(state.pause_remaining, None);
+        assert_eq!(state.cooldown_remaining, Some(Duration::from_secs(65)));
+        assert_eq!(
+            state
+                .status_response_at(now + Duration::from_secs(5))
+                .resume_in_seconds,
+            Some(65)
+        );
+        assert_state_changed(&effects, DetectionStatus::Cooldown, false);
     }
 
     #[test]
