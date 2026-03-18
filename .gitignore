@@ -36,3 +36,4 @@ next-env.d.ts
 # local planning artifacts
 /todos/
 /C1_MVP_Scope_AI_Start_Coach.docx
+.worktrees
