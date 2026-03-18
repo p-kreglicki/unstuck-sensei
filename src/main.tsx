@@ -4,16 +4,18 @@ import { BrowserRouter } from "react-router";
 import App from "./App";
 import { AuthProvider } from "./hooks/useAuth";
 import { DetectionProvider } from "./hooks/useDetection";
+import { DetectionSyncBridge } from "./hooks/useDetectionSync";
 import "./main.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <DetectionProvider>
-      <AuthProvider>
+    <AuthProvider>
+      <DetectionProvider>
+        <DetectionSyncBridge />
         <BrowserRouter>
           <App />
         </BrowserRouter>
-      </AuthProvider>
-    </DetectionProvider>
+      </DetectionProvider>
+    </AuthProvider>
   </React.StrictMode>,
 );
