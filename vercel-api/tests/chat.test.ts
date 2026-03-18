@@ -9,7 +9,6 @@ vi.mock("@supabase/supabase-js", () => ({
 import chatRoute, {
   consumeRateLimit,
   handleChatRequest,
-  normalizeAnthropicError,
   normalizeRequestBody,
   normalizeStructuredResponse,
   OutputAccumulator,
@@ -268,32 +267,6 @@ describe("chat route helpers", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("normalizes invalid Anthropic model errors into deployment guidance", () => {
-    expect(
-      normalizeAnthropicError({
-        message: "model: claude-3-5-haiku-latest",
-        model: "claude-3-5-haiku-latest",
-        status: 400,
-        type: "invalid_request_error",
-      }),
-    ).toBe(
-      'The configured Anthropic model "claude-3-5-haiku-latest" is unavailable. Check ANTHROPIC_MODEL against Anthropic\'s current models list.',
-    );
-  });
-
-  it("normalizes Anthropic permission errors into key guidance", () => {
-    expect(
-      normalizeAnthropicError({
-        message: "You do not have access to this model.",
-        model: "claude-haiku-4-5",
-        status: 403,
-        type: "permission_error",
-      }),
-    ).toBe(
-      'The configured Anthropic API key does not have access to model "claude-haiku-4-5". Check ANTHROPIC_API_KEY and ANTHROPIC_MODEL.',
-    );
-  });
-
   it("normalizes request bodies with trimmed fields and capped lengths", () => {
     expect(
       normalizeRequestBody({
@@ -530,7 +503,6 @@ describe("chat route helpers", () => {
     expect(response.status).toBe(200);
     const errorBody = await response.text();
     expect(errorBody).toContain("event: error");
-    expect(errorBody).toContain('"recoverable":true');
     expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
       input_log_id: "log-1",
     });
@@ -607,7 +579,6 @@ describe("chat route helpers", () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).toContain("The coaching stream failed unexpectedly.");
-    expect(body).toContain('"recoverable":true');
     expect(body).toContain('event: done\ndata: {"ok":false}');
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
@@ -685,7 +656,6 @@ describe("chat route helpers", () => {
     const body = await response.text();
     expect(body).toContain('event: text-delta\ndata: {"text":"Let\u2019s keep this tiny."}');
     expect(body).toContain("The coaching stream failed unexpectedly.");
-    expect(body).toContain('"recoverable":false');
     expect(body).not.toContain('event: done\ndata: {"ok":false}');
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(rpcMock).toHaveBeenCalledWith("release_chat_rate_limit_reservation", {
@@ -758,7 +728,6 @@ describe("chat route helpers", () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).toContain("The coaching stream failed unexpectedly.");
-    expect(body).toContain('"recoverable":false');
     expect(body).not.toContain('relation "private.audit" does not exist');
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "[chat] unexpected streaming failure",

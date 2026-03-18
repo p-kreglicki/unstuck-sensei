@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { parseSseFrames } from "../../shared/session/chat-sse.js";
-import { supabase } from "../lib/supabase";
 import {
   isStructuredChatResponse,
   type ChatRequestMode,
@@ -24,6 +23,7 @@ const defaultState: ChatState = {
 };
 
 type UseChatOptions = {
+  accessToken: string | null;
   sessionId: string | null;
 };
 
@@ -35,7 +35,7 @@ type SendChatInput = {
   stuckOn: string;
 };
 
-export function useChat({ sessionId }: UseChatOptions) {
+export function useChat({ accessToken, sessionId }: UseChatOptions) {
   const [state, setState] = useState<ChatState>(defaultState);
   const abortRef = useRef<AbortController | null>(null);
   const pendingStreamingTextRef = useRef("");
@@ -45,7 +45,7 @@ export function useChat({ sessionId }: UseChatOptions) {
   useEffect(() => {
     return () => {
       if (streamingFrameRef.current !== null) {
-        cancelAnimationFrameCompat(streamingFrameRef.current);
+        cancelAnimationFrame(streamingFrameRef.current);
       }
 
       abortRef.current?.abort();
@@ -71,7 +71,7 @@ export function useChat({ sessionId }: UseChatOptions) {
 
   function flushStreamingText() {
     if (streamingFrameRef.current !== null) {
-      cancelAnimationFrameCompat(streamingFrameRef.current);
+      cancelAnimationFrame(streamingFrameRef.current);
       streamingFrameRef.current = null;
     }
 
@@ -83,7 +83,7 @@ export function useChat({ sessionId }: UseChatOptions) {
       return;
     }
 
-    streamingFrameRef.current = requestAnimationFrameCompat(() => {
+    streamingFrameRef.current = requestAnimationFrame(() => {
       streamingFrameRef.current = null;
       applyPendingStreamingText();
     });
@@ -102,12 +102,7 @@ export function useChat({ sessionId }: UseChatOptions) {
       throw new Error("VITE_VERCEL_API_URL is not configured.");
     }
 
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError || !session?.access_token) {
+    if (!accessToken) {
       throw new Error("Your session expired. Sign in again to continue.");
     }
 
@@ -117,7 +112,7 @@ export function useChat({ sessionId }: UseChatOptions) {
     streamingTextRef.current = "";
 
     if (streamingFrameRef.current !== null) {
-      cancelAnimationFrameCompat(streamingFrameRef.current);
+      cancelAnimationFrame(streamingFrameRef.current);
       streamingFrameRef.current = null;
     }
 
@@ -139,7 +134,7 @@ export function useChat({ sessionId }: UseChatOptions) {
           stuckOn: input.stuckOn,
         }),
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
         method: "POST",
@@ -171,10 +166,10 @@ export function useChat({ sessionId }: UseChatOptions) {
 
         for (const event of parsed.events) {
           if (event.event === "text-delta") {
-            const payload = parseJsonPayload<{ text: string }>(event.data);
+            const text = readTextDeltaPayload(event.data);
 
-            if (payload?.text) {
-              pendingStreamingTextRef.current += payload.text;
+            if (text) {
+              pendingStreamingTextRef.current += text;
               scheduleStreamingTextFlush();
             }
 
@@ -182,7 +177,7 @@ export function useChat({ sessionId }: UseChatOptions) {
           }
 
           if (event.event === "structured") {
-            const payload = parseJsonPayload<StructuredChatResponse>(event.data);
+            const payload = parseJsonPayload(event.data);
 
             if (!payload || !isStructuredChatResponse(payload)) {
               throw new Error("The server returned an invalid coaching result.");
@@ -198,8 +193,7 @@ export function useChat({ sessionId }: UseChatOptions) {
           }
 
           if (event.event === "error") {
-            const payload = parseJsonPayload<{ message?: string }>(event.data);
-            errorMessage = payload?.message ?? "The coaching stream failed.";
+            errorMessage = readErrorPayload(event.data);
             flushStreamingText();
             setState((current) => ({
               ...current,
@@ -316,27 +310,41 @@ async function readChatError(response: Response) {
   return `The coaching request failed with status ${response.status}.`;
 }
 
-function parseJsonPayload<T>(value: string): T | null {
+function parseJsonPayload(value: string): unknown | null {
   try {
-    return JSON.parse(value) as T;
+    return JSON.parse(value);
   } catch {
     return null;
   }
 }
 
-function requestAnimationFrameCompat(callback: FrameRequestCallback) {
-  if (typeof globalThis.requestAnimationFrame === "function") {
-    return globalThis.requestAnimationFrame(callback);
+function readTextDeltaPayload(value: string) {
+  const payload = parseJsonPayload(value);
+
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "text" in payload &&
+    typeof payload.text === "string"
+  ) {
+    return payload.text;
   }
 
-  return globalThis.setTimeout(() => callback(Date.now()), 16);
+  return null;
 }
 
-function cancelAnimationFrameCompat(handle: number) {
-  if (typeof globalThis.cancelAnimationFrame === "function") {
-    globalThis.cancelAnimationFrame(handle);
-    return;
+function readErrorPayload(value: string) {
+  const payload = parseJsonPayload(value);
+
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    payload.message.trim().length > 0
+  ) {
+    return payload.message;
   }
 
-  globalThis.clearTimeout(handle);
+  return "The coaching stream failed.";
 }

@@ -98,6 +98,12 @@ type AnthropicErrorPayload = {
   };
 };
 
+type ChatError = Error & {
+  exposeMessage?: boolean;
+  logContext?: Record<string, unknown>;
+  retryable?: boolean;
+};
+
 export const runtime = "nodejs";
 
 export default {
@@ -139,7 +145,7 @@ export async function handleChatRequest(request: Request) {
     return normalizedRequest.response;
   }
 
-  const adminClient = createClient(
+  const authClient = createClient(
     environment.supabaseUrl,
     environment.supabasePublishableKey,
     {
@@ -153,7 +159,7 @@ export async function handleChatRequest(request: Request) {
   const {
     data: { user },
     error: authError,
-  } = await adminClient.auth.getUser(normalizedRequest.authorizationToken);
+  } = await authClient.auth.getUser(normalizedRequest.authorizationToken);
 
   if (authError || !user) {
     return jsonResponse(
@@ -273,7 +279,7 @@ export async function handleChatRequest(request: Request) {
         const hadWrittenBytes = bytesWritten;
         const message = formatServerError(error);
 
-        if (!(error instanceof AnthropicRequestError)) {
+        if (!hasChatErrorLogContext(error)) {
           console.error("[chat] unexpected streaming failure", {
             error: error instanceof Error ? error.message : String(error),
             reservationId,
@@ -308,7 +314,6 @@ export async function handleChatRequest(request: Request) {
 
         writeEvent("error", {
           message,
-          recoverable: error instanceof RetryableError ? error.retryable : false,
         });
 
         if (!hadWrittenBytes) {
@@ -374,7 +379,7 @@ async function streamAnthropicResponse(input: {
       });
 
       if (!upstreamResponse.ok || !upstreamResponse.body) {
-        throw await createAnthropicRequestError(upstreamResponse, input.model);
+        throw await createAnthropicError(upstreamResponse, input.model);
       }
 
       const reader = upstreamResponse.body.getReader();
@@ -421,7 +426,7 @@ async function streamAnthropicResponse(input: {
       }
 
       if (!structuredRaw) {
-        throw new RetryableError(
+        throw createChatError(
           "The model response ended before the structured result arrived.",
           {
             retryable: !bytesWrittenToClient,
@@ -441,16 +446,16 @@ async function streamAnthropicResponse(input: {
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
 
-      if (error instanceof AnthropicRequestError) {
-        logAnthropicRequestError(error, {
+      if (hasChatErrorLogContext(error)) {
+        console.error("[chat] anthropic request failed", {
           attempt,
+          ...error.logContext,
           bytesWrittenToClient,
         });
       }
 
       if (
-        error instanceof RetryableError &&
-        error.retryable &&
+        isRetryableChatError(error) &&
         attempt === 0 &&
         !bytesWrittenToClient
       ) {
@@ -741,7 +746,7 @@ export function normalizeStructuredResponse(
   return {
     assistantText: normalizedAssistantText,
     kind: "steps",
-    steps: clampSteps(createSessionSteps(normalized.steps)).slice(0, MAX_STEPS),
+    steps: clampSteps(createSessionSteps(normalized.steps)),
   };
 }
 
@@ -911,73 +916,19 @@ async function readAnthropicErrorPayload(response: Response) {
   }
 }
 
-async function createAnthropicRequestError(response: Response, model: string) {
+async function createAnthropicError(response: Response, model: string) {
   const parsed = await readUpstreamError(response);
-  const retryable = isRetryableStatus(response.status);
 
-  return new AnthropicRequestError(
-    normalizeAnthropicError({
-      message: parsed.message,
+  return createChatError(parsed.message, {
+    exposeMessage: true,
+    logContext: {
       model,
-      status: response.status,
-      type: parsed.type,
-    }),
-    {
-      model,
-      rawMessage: parsed.message,
-      retryable,
+      provider: "anthropic",
+      retryable: isRetryableStatus(response.status),
       status: response.status,
       type: parsed.type,
     },
-  );
-}
-
-export function normalizeAnthropicError(input: {
-  message: string;
-  model: string;
-  status: number;
-  type: string | null;
-}) {
-  const message = input.message.trim();
-  const lowerMessage = message.toLowerCase();
-
-  if (
-    input.type === "permission_error" ||
-    lowerMessage.includes("permission") ||
-    lowerMessage.includes("not authorized") ||
-    lowerMessage.includes("not allowed") ||
-    lowerMessage.includes("access")
-  ) {
-    return `The configured Anthropic API key does not have access to model "${input.model}". Check ANTHROPIC_API_KEY and ANTHROPIC_MODEL.`;
-  }
-
-  if (
-    input.type === "invalid_request_error" &&
-    lowerMessage.includes("model")
-  ) {
-    return `The configured Anthropic model "${input.model}" is unavailable. Check ANTHROPIC_MODEL against Anthropic's current models list.`;
-  }
-
-  return message || `Anthropic request failed with status ${input.status}.`;
-}
-
-function logAnthropicRequestError(
-  error: AnthropicRequestError,
-  input: {
-    attempt: number;
-    bytesWrittenToClient: boolean;
-  },
-) {
-  console.error("[chat] anthropic request failed", {
-    attempt: input.attempt + 1,
-    message: error.message,
-    model: error.model,
-    provider: "anthropic",
-    rawMessage: error.rawMessage,
-    retryable: error.retryable,
-    status: error.status,
-    streamedToClient: input.bytesWrittenToClient,
-    type: error.type,
+    retryable: isRetryableStatus(response.status),
   });
 }
 
@@ -1010,7 +961,7 @@ function jsonResponse(
 }
 
 function formatServerError(error: unknown) {
-  if (error instanceof AnthropicRequestError) {
+  if (isExposedChatError(error)) {
     return error.message;
   }
 
@@ -1067,37 +1018,36 @@ export class OutputAccumulator {
   }
 }
 
-class RetryableError extends Error {
-  retryable: boolean;
-
-  constructor(message: string, options: { retryable: boolean }) {
-    super(message);
-    this.name = "RetryableError";
-    this.retryable = options.retryable;
-  }
+function createChatError(
+  message: string,
+  options: {
+    exposeMessage?: boolean;
+    logContext?: Record<string, unknown>;
+    retryable?: boolean;
+  },
+) {
+  return Object.assign(new Error(message), options) as ChatError;
 }
 
-class AnthropicRequestError extends RetryableError {
-  model: string;
-  rawMessage: string;
-  status: number;
-  type: string | null;
+function hasChatErrorLogContext(error: unknown): error is ChatError & {
+  logContext: Record<string, unknown>;
+} {
+  return (
+    error instanceof Error &&
+    "logContext" in error &&
+    !!error.logContext &&
+    typeof error.logContext === "object"
+  );
+}
 
-  constructor(
-    message: string,
-    options: {
-      model: string;
-      rawMessage: string;
-      retryable: boolean;
-      status: number;
-      type: string | null;
-    },
-  ) {
-    super(message, { retryable: options.retryable });
-    this.model = options.model;
-    this.name = "AnthropicRequestError";
-    this.rawMessage = options.rawMessage;
-    this.status = options.status;
-    this.type = options.type;
-  }
+function isExposedChatError(error: unknown): error is ChatError & {
+  exposeMessage: true;
+} {
+  return error instanceof Error && "exposeMessage" in error && error.exposeMessage === true;
+}
+
+function isRetryableChatError(error: unknown): error is ChatError & {
+  retryable: true;
+} {
+  return error instanceof Error && "retryable" in error && error.retryable === true;
 }

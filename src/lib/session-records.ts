@@ -2,7 +2,6 @@ import { supabase } from "./supabase";
 import {
   parseSessionSteps,
   type SessionSource,
-  type SessionStep,
   type SessionSummary,
 } from "../../shared/session/session-protocol.js";
 import type { Database } from "./database.types";
@@ -133,8 +132,4 @@ export async function loadRecentSessionSummaries(
     steps: parseSessionSteps(session.steps),
     stuckOn: session.stuck_on,
   })) as SessionSummary[];
-}
-
-export function readSessionSteps(session: SessionRow | null): SessionStep[] {
-  return parseSessionSteps(session?.steps ?? null);
 }

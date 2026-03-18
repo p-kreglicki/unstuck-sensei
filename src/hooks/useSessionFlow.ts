@@ -12,7 +12,6 @@ import {
   loadActiveSessionDraft,
   loadConversationMessages,
   loadRecentSessionSummaries,
-  readSessionSteps,
   updateSessionDraft,
   type ConversationMessageRow,
   type SessionRow,
@@ -20,6 +19,7 @@ import {
 import {
   isEnergyLevel,
   isSessionSource,
+  parseSessionSteps,
   type EnergyLevel,
   type SessionSource,
   type SessionStep,
@@ -81,7 +81,7 @@ async function persistSessionPatch(input: {
 }
 
 export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
-  const { user } = useAuth();
+  const { session, user } = useAuth();
   const requestedSource = readRequestedSource(locationState);
   const [isBooting, setIsBooting] = useState(true);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
@@ -95,7 +95,10 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
   const [clarifyingAnswer, setClarifyingAnswer] = useState("");
   const [steps, setSteps] = useState<SessionStep[]>([]);
   const [confirmed, setConfirmed] = useState(false);
-  const chat = useChat({ sessionId: sessionRow?.id ?? null });
+  const chat = useChat({
+    accessToken: session?.access_token ?? null,
+    sessionId: sessionRow?.id ?? null,
+  });
 
   useEffect(() => {
     let active = true;
@@ -146,7 +149,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
               : null,
           );
           setClarifyingAnswer(activeSession.clarifying_answer ?? "");
-          setSteps(readSessionSteps(activeSession));
+          setSteps(parseSessionSteps(activeSession.steps));
           return;
         }
 

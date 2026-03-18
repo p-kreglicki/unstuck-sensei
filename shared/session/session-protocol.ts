@@ -110,16 +110,12 @@ export function isStructuredChatResponse(
   return false;
 }
 
-export function createStepId(index: number) {
-  return `step-${index + 1}`;
-}
-
 export function createSessionSteps(steps: string[]): SessionStep[] {
   return steps
     .map((step) => step.trim())
     .filter((step) => step.length > 0)
     .map((text, index) => ({
-      id: createStepId(index),
+      id: `step-${index + 1}`,
       text,
     }));
 }
