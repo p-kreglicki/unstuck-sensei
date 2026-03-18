@@ -594,13 +594,6 @@ export function normalizeRequestBody(body: unknown): NormalizedRequestBodyResult
   const sessionId = candidate.sessionId.trim();
   const stuckOn = candidate.stuckOn.trim();
 
-  if (sessionId.length === 0) {
-    return {
-      kind: "error",
-      message: "Invalid chat request payload.",
-    };
-  }
-
   if (!UUID_RE.test(sessionId)) {
     return {
       kind: "error",
@@ -669,6 +662,7 @@ async function normalizeRequest(
   const parsedContentLength =
     contentLength && /^\d+$/.test(contentLength) ? Number(contentLength) : null;
 
+  // Advisory early exit based on the header value; actual body limits are enforced elsewhere.
   if (
     parsedContentLength !== null &&
     parsedContentLength > MAX_CHAT_REQUEST_BYTES
@@ -919,10 +913,11 @@ async function readAnthropicErrorPayload(response: Response) {
 async function createAnthropicError(response: Response, model: string) {
   const parsed = await readUpstreamError(response);
 
-  return createChatError(parsed.message, {
+  return createChatError(userMessageForAnthropicError(response.status), {
     exposeMessage: true,
     logContext: {
       model,
+      providerMessage: parsed.message,
       provider: "anthropic",
       retryable: isRetryableStatus(response.status),
       status: response.status,
@@ -930,6 +925,18 @@ async function createAnthropicError(response: Response, model: string) {
     },
     retryable: isRetryableStatus(response.status),
   });
+}
+
+function userMessageForAnthropicError(status: number) {
+  if (status === 429) {
+    return "The coaching service is busy right now. Try again soon.";
+  }
+
+  if (status >= 500) {
+    return "The coaching service is temporarily unavailable. Try again soon.";
+  }
+
+  return "The coaching request could not be completed right now.";
 }
 
 function corsHeaders(request: Request) {
