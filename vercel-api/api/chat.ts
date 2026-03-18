@@ -23,9 +23,11 @@ import {
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
+const MAX_CHAT_REQUEST_BYTES = 8 * 1024;
 const MAX_RECENT_SESSIONS = 3;
 const MAX_STEPS = 5;
 const MAX_TOKENS = 700;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BASE_CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
   "Access-Control-Allow-Methods": "OPTIONS, POST",
@@ -594,6 +596,13 @@ export function normalizeRequestBody(body: unknown): NormalizedRequestBodyResult
     };
   }
 
+  if (!UUID_RE.test(sessionId)) {
+    return {
+      kind: "error",
+      message: "Invalid chat request payload.",
+    };
+  }
+
   if (stuckOn.length === 0) {
     return {
       kind: "error",
@@ -647,6 +656,25 @@ async function normalizeRequest(
         { error: "Missing Authorization bearer token." },
         request,
         { status: 401 },
+      ),
+    };
+  }
+
+  const contentLength = request.headers.get("content-length");
+  const parsedContentLength =
+    contentLength && /^\d+$/.test(contentLength) ? Number(contentLength) : null;
+
+  if (
+    parsedContentLength !== null &&
+    parsedContentLength > MAX_CHAT_REQUEST_BYTES
+  ) {
+    return {
+      response: jsonResponse(
+        {
+          error: `Request body must be ${MAX_CHAT_REQUEST_BYTES} bytes or fewer.`,
+        },
+        request,
+        { status: 413 },
       ),
     };
   }
