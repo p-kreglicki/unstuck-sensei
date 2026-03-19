@@ -48,7 +48,7 @@ export function AppNavigationBridge() {
   return null;
 }
 
-function App() {
+export function App() {
   return (
     <>
       <AppNavigationBridge />
@@ -85,5 +85,3 @@ function App() {
     </>
   );
 }
-
-export default App;

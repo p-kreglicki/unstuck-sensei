@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router";
-import App from "./App";
+import { App } from "./App";
 import { AuthProvider } from "./hooks/useAuth";
 import { DetectionProvider } from "./hooks/useDetection";
 import { DetectionSyncBridge } from "./hooks/useDetectionSync";
