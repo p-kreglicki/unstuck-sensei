@@ -27,12 +27,45 @@ describe("toDisplayError", () => {
     expect(toDisplayError({}, "fallback")).toBe("fallback");
   });
 
-  it("returns other messages unchanged", () => {
+  it("falls back for unrecognized database errors", () => {
     expect(
       toDisplayError(
-        { message: "Unable to save your draft session." },
+        {
+          message:
+            'insert or update on table "sessions" violates foreign key constraint "sessions_user_id_fkey"',
+        },
         "fallback",
       ),
-    ).toBe("Unable to save your draft session.");
+    ).toBe("fallback");
+  });
+
+  it("falls back for unrecognized infrastructure errors", () => {
+    expect(
+      toDisplayError(
+        {
+          message:
+            "failed to connect to pg-pooler.internal.supabase.net: connection refused",
+        },
+        "fallback",
+      ),
+    ).toBe("fallback");
+  });
+
+  it("preserves allowlisted app messages", () => {
+    expect(
+      toDisplayError(
+        { message: "Your session expired. Sign in again to continue." },
+        "fallback",
+      ),
+    ).toBe("Your session expired. Sign in again to continue.");
+  });
+
+  it("preserves allowlisted app message patterns", () => {
+    expect(
+      toDisplayError(
+        { message: "The coaching request failed with status 429." },
+        "fallback",
+      ),
+    ).toBe("The coaching request failed with status 429.");
   });
 });
