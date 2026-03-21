@@ -4,19 +4,25 @@ import type { SessionRow } from "../lib/session-records";
 
 const {
   createSessionDraftMock,
+  loadActiveTimerSessionMock,
+  loadLatestTimerBlockMock,
   insertConversationMessageMock,
   loadActiveSessionDraftMock,
   loadConversationMessagesMock,
   loadRecentSessionSummariesMock,
+  useTimerMock,
   updateSessionDraftMock,
   useAuthMock,
   useChatMock,
 } = vi.hoisted(() => ({
   createSessionDraftMock: vi.fn(),
+  loadActiveTimerSessionMock: vi.fn(),
+  loadLatestTimerBlockMock: vi.fn(),
   insertConversationMessageMock: vi.fn(),
   loadActiveSessionDraftMock: vi.fn(),
   loadConversationMessagesMock: vi.fn(),
   loadRecentSessionSummariesMock: vi.fn(),
+  useTimerMock: vi.fn(),
   updateSessionDraftMock: vi.fn(),
   useAuthMock: vi.fn(),
   useChatMock: vi.fn(),
@@ -30,17 +36,31 @@ vi.mock("./useChat", () => ({
   useChat: (input: unknown) => useChatMock(input),
 }));
 
+vi.mock("./useTimer", () => ({
+  useTimer: () => useTimerMock(),
+}));
+
 vi.mock("../lib/session-records", () => ({
+  checkInTimerSession: vi.fn(),
+  completeTimerBlock: vi.fn(),
   createSessionDraft: (...args: unknown[]) => createSessionDraftMock(...args),
+  expireTimerCheckin: vi.fn(),
   insertConversationMessage: (...args: unknown[]) =>
     insertConversationMessageMock(...args),
   loadActiveSessionDraft: (...args: unknown[]) => loadActiveSessionDraftMock(...args),
+  loadActiveTimerSession: (...args: unknown[]) => loadActiveTimerSessionMock(...args),
   loadConversationMessages: (...args: unknown[]) =>
     loadConversationMessagesMock(...args),
+  loadLatestTimerBlock: (...args: unknown[]) => loadLatestTimerBlockMock(...args),
   loadRecentSessionSummaries: (...args: unknown[]) =>
     loadRecentSessionSummariesMock(...args),
   readSessionSteps: (session: { steps?: unknown } | null) =>
     Array.isArray(session?.steps) ? session.steps : [],
+  revertExtensionStart: vi.fn(),
+  revertTimerStart: vi.fn(),
+  startExtensionBlock: vi.fn(),
+  startTimerBlock: vi.fn(),
+  stopTimerBlock: vi.fn(),
   updateSessionDraft: (...args: unknown[]) => updateSessionDraftMock(...args),
 }));
 
@@ -58,6 +78,7 @@ function createDeferred<T>() {
 
 function createSessionRow(overrides: Partial<SessionRow> = {}): SessionRow {
   return {
+    checked_in_at: null,
     clarifying_answer: null,
     clarifying_question: null,
     created_at: "2026-03-17T10:00:00.000Z",
@@ -71,6 +92,7 @@ function createSessionRow(overrides: Partial<SessionRow> = {}): SessionRow {
     timer_duration_seconds: null,
     timer_ended_at: null,
     timer_extended: null,
+    timer_revision: 0,
     timer_started_at: null,
     updated_at: "2026-03-17T10:00:00.000Z",
     user_id: "user-1",
@@ -104,8 +126,47 @@ describe("useSessionFlow", () => {
       sendInitial: vi.fn(),
       state: createChatState(),
     });
+    useTimerMock.mockReturnValue({
+      clearPendingSyncs: vi.fn(),
+      clearRuntime: vi.fn().mockResolvedValue({
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "idle",
+        timerRevision: null,
+      }),
+      extendTimer: vi.fn(),
+      getPendingSyncs: vi.fn().mockResolvedValue([]),
+      hydrateAwaitingCheckin: vi.fn(),
+      hydrateRunning: vi.fn(),
+      refreshStatus: vi.fn().mockResolvedValue({
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "idle",
+        timerRevision: null,
+      }),
+      resolveCheckin: vi.fn(),
+      startTimer: vi.fn(),
+      state: {
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "idle",
+        timerRevision: null,
+      },
+      stopTimer: vi.fn(),
+    });
     loadActiveSessionDraftMock.mockResolvedValue(null);
+    loadActiveTimerSessionMock.mockResolvedValue(null);
     loadConversationMessagesMock.mockResolvedValue([]);
+    loadLatestTimerBlockMock.mockResolvedValue(null);
     loadRecentSessionSummariesMock.mockResolvedValue([]);
   });
 

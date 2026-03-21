@@ -189,6 +189,10 @@ impl DetectionState {
         self.set_app_foregrounded_at(app_foregrounded, Instant::now())
     }
 
+    pub fn set_timer_suppression(&mut self, active: bool) -> Vec<DetectionRuntimeEffect> {
+        self.set_timer_suppression_at(active, Instant::now())
+    }
+
     pub fn update_idle_seconds(&mut self, idle_seconds: u64) -> Vec<DetectionRuntimeEffect> {
         self.update_idle_seconds_at(idle_seconds, Instant::now(), Local::now().date_naive())
     }
@@ -363,6 +367,15 @@ impl DetectionState {
     ) -> Vec<DetectionRuntimeEffect> {
         self.app_foregrounded = app_foregrounded;
         self.refresh_dynamic_suppression_reasons();
+        self.refresh_suppression_state(now)
+    }
+
+    fn set_timer_suppression_at(
+        &mut self,
+        active: bool,
+        now: Instant,
+    ) -> Vec<DetectionRuntimeEffect> {
+        self.set_suppression_reason(SuppressionReason::TimerRunning, active);
         self.refresh_suppression_state(now)
     }
 

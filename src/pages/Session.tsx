@@ -1,10 +1,11 @@
 import { useLocation } from "react-router";
+import { CheckIn } from "../components/session/CheckIn";
 import { ClarifyingQuestion } from "../components/session/ClarifyingQuestion";
-import { ConfirmedCard } from "../components/session/ConfirmedCard";
 import { EnergySelector } from "../components/session/EnergySelector";
 import { LoadingCard } from "../components/session/LoadingCard";
 import { StepsList } from "../components/session/StepsList";
 import { StuckInput } from "../components/session/StuckInput";
+import { Timer } from "../components/session/Timer";
 import { TranscriptCard } from "../components/session/TranscriptCard";
 import { useSessionFlow } from "../hooks/useSessionFlow";
 
@@ -63,6 +64,7 @@ export function Session() {
 
           {flow.currentStage === "steps" && flow.steps.length > 0 ? (
             <StepsList
+              isConfirming={flow.isSubmittingTimerAction}
               isRetrying={flow.isRetrying || flow.chatState.isStreaming}
               onConfirm={flow.handleConfirm}
               onMoveDown={(index) => void flow.handleMoveStep(index, index + 1)}
@@ -72,8 +74,23 @@ export function Session() {
             />
           ) : null}
 
-          {flow.currentStage === "confirmed" && flow.steps.length > 0 ? (
-            <ConfirmedCard steps={flow.steps} />
+          {flow.currentStage === "timer" ? (
+            <Timer
+              firstStepText={flow.steps[0]?.text ?? null}
+              isStopping={flow.isSubmittingTimerAction}
+              onStop={() => void flow.handleStopTimer()}
+              remainingSecs={flow.timerState.remainingSecs}
+            />
+          ) : null}
+
+          {flow.currentStage === "checkin" ? (
+            <CheckIn
+              canExtend={!flow.sessionRow?.timer_extended}
+              firstStepText={flow.steps[0]?.text ?? null}
+              isSubmitting={flow.isSubmittingTimerAction}
+              onExtend={() => void flow.handleExtendTimer()}
+              onFeedback={(feedback) => void flow.handleCheckIn(feedback)}
+            />
           ) : null}
         </>
       )}

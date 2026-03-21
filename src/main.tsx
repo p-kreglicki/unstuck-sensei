@@ -5,17 +5,20 @@ import { App } from "./App";
 import { AuthProvider } from "./hooks/useAuth";
 import { DetectionProvider } from "./hooks/useDetection";
 import { DetectionSyncBridge } from "./hooks/useDetectionSync";
+import { TimerProvider } from "./hooks/useTimer";
 import "./main.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <AuthProvider>
-      <DetectionProvider>
-        <DetectionSyncBridge />
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </DetectionProvider>
+      <TimerProvider>
+        <DetectionProvider>
+          <DetectionSyncBridge />
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </DetectionProvider>
+      </TimerProvider>
     </AuthProvider>
   </React.StrictMode>,
 );

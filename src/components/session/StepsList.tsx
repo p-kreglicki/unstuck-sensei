@@ -1,6 +1,7 @@
 import type { SessionStep } from "../../../shared/session/session-protocol.js";
 
 type StepsListProps = {
+  isConfirming: boolean;
   isRetrying: boolean;
   onConfirm(): void;
   onMoveDown(index: number): void;
@@ -10,6 +11,7 @@ type StepsListProps = {
 };
 
 export function StepsList({
+  isConfirming,
   isRetrying,
   onConfirm,
   onMoveDown,
@@ -75,11 +77,12 @@ export function StepsList({
       </ol>
 
       <button
-        className="mt-5 w-full rounded-2xl bg-teal-400 px-4 py-3 font-medium text-slate-950 transition hover:bg-teal-300"
+        className="mt-5 w-full rounded-2xl bg-teal-400 px-4 py-3 font-medium text-slate-950 transition hover:bg-teal-300 disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={isConfirming}
         onClick={onConfirm}
         type="button"
       >
-        I know my first step
+        {isConfirming ? "Starting timer…" : "Start 25-minute timer"}
       </button>
     </section>
   );
