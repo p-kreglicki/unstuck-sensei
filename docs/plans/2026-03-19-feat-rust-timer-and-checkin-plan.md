@@ -291,17 +291,17 @@ Replace the current menu items when the timer session is unresolved:
 
 **Tasks:**
 
-- [ ] Add `checked_in_at timestamptz` and `timer_revision integer not null default 0` to `sessions`
-- [ ] Create `session_timer_blocks`
+- [x] Add `checked_in_at timestamptz` and `timer_revision integer not null default 0` to `sessions`
+- [x] Create `session_timer_blocks`
   - `id`, `session_id`, `block_index`, `kind`, `started_at`, `ended_at`, `duration_seconds`, `created_at`
-- [ ] Add DB constraints
+- [x] Add DB constraints
   - `unique(session_id, block_index)`
   - at most one extension block per session
   - check constraints for valid `kind`
-- [ ] Enable RLS and ownership-based access for `session_timer_blocks`
+- [x] Enable RLS and ownership-based access for `session_timer_blocks`
   - `SELECT` policy for session owners
   - no direct client write policies for timer blocks
-- [ ] Define transactional RPCs for lifecycle mutations
+- [x] Define transactional RPCs for lifecycle mutations
   - `start_timer_block`
   - `complete_timer_block`
   - `start_extension_block`
@@ -310,8 +310,8 @@ Replace the current menu items when the timer session is unresolved:
   - `expire_timer_checkin`
   - `revert_timer_start`
   - `revert_extension_start`
-- [ ] Ensure every timer RPC accepts `expected_revision`, bumps `timer_revision`, and validates session ownership before mutating timer rows
-- [ ] Regenerate `src/lib/database.types.ts`
+- [x] Ensure every timer RPC accepts `expected_revision`, bumps `timer_revision`, and validates session ownership before mutating timer rows
+- [x] Regenerate `src/lib/database.types.ts`
 
 ### Phase 4b: Rust Timer Runtime And Local Recovery
 
@@ -319,34 +319,34 @@ Replace the current menu items when the timer session is unresolved:
 
 **Tasks:**
 
-- [ ] Create `src-tauri/src/timer/mod.rs` with `TimerState`
+- [x] Create `src-tauri/src/timer/mod.rs` with `TimerState`
   - Fields: `status` (`Idle | Running | AwaitingCheckin`), `deadline`, `session_id`, `current_block_id`, `block_started_at`, `checkin_started_at`, `duration_secs`, `extended`
   - Methods: `start(...)`, `stop()`, `tick()`, `extend(...)`, `resolve_checkin()`, `hydrate_running(...)`, `hydrate_awaiting_checkin(...)`, `get_status()`
   - Each mutation returns `Vec<TimerRuntimeEffect>`
-- [ ] Define `TimerRuntimeEffect`
+- [x] Define `TimerRuntimeEffect`
   - `EmitStateChanged`
   - `SendNotification`
   - `SyncTrayMenu`
   - `SetDetectionSuppression(bool)`
   - `PersistSnapshot`
   - `EnqueuePendingSync`
-- [ ] Define `TimerStatusResponse` serde payload for the frontend
+- [x] Define `TimerStatusResponse` serde payload for the frontend
   - Fields: `status`, `remaining_secs`, `session_id`, `current_block_id`, `extended`, `duration_secs`
-- [ ] Implement snapshot persistence and pending-sync outbox storage
-- [ ] Implement `execute_timer_effects()` in `timer/mod.rs`
+- [x] Implement snapshot persistence and pending-sync outbox storage
+- [x] Implement `execute_timer_effects()` in `timer/mod.rs`
   - Emit `"timer-state-changed"`
   - Fire native notification on completion
   - Call `sync_tray_menu()` only when timer-visible tray state changes or the displayed minute bucket changes
   - Insert/remove `SuppressionReason::TimerRunning`
   - Persist snapshot / outbox changes
-- [ ] Add `set_timer_suppression(active: bool)` to `DetectionState`
-- [ ] Spawn a 1-second tick loop using `tauri::async_runtime::spawn` + `tokio::time::interval`
+- [x] Add `set_timer_suppression(active: bool)` to `DetectionState`
+- [x] Spawn a 1-second tick loop using `tauri::async_runtime::spawn` + `tokio::time::interval`
   - On each tick: lock `TimerState`, call `tick()`, execute effects
   - `tick()` calculates `remaining = deadline - Utc::now()`
   - Loop exits when status is `Idle` or `AwaitingCheckin`
-- [ ] Register `Mutex<TimerState>` as managed state in `lib.rs`
-- [ ] On app startup, restore runtime from the local timer snapshot before the frontend mounts
-- [ ] Write unit tests for the state machine
+- [x] Register `Mutex<TimerState>` as managed state in `lib.rs`
+- [x] On app startup, restore runtime from the local timer snapshot before the frontend mounts
+- [x] Write unit tests for the state machine
   - Start -> tick -> AwaitingCheckin flow
   - Start -> stop flow
   - Start -> AwaitingCheckin -> extend -> AwaitingCheckin flow
@@ -363,26 +363,26 @@ Replace the current menu items when the timer session is unresolved:
 
 **Tasks:**
 
-- [ ] Add Tauri commands in `src-tauri/src/commands.rs`
+- [x] Add Tauri commands in `src-tauri/src/commands.rs`
   - `start_timer(session_id: String, block_id: String, started_at: String, duration_secs: u32)` -> starts Rust runtime after durable success
   - `stop_timer()` -> cancels timer, returns `TimerStatusResponse`
   - `extend_timer(session_id: String, block_id: String, started_at: String, duration_secs: u32)` -> starts the extension runtime after durable success
   - `resolve_checkin()` -> resets `AwaitingCheckin` to `Idle` after durable feedback save
   - `get_pending_timer_syncs()` / `clear_pending_timer_syncs()` for outbox replay
   - `get_timer_state()` -> returns current `TimerStatusResponse`
-- [ ] Register all timer commands in `generate_handler![]` in `lib.rs`
-- [ ] Update `build_tray_menu()` to accept timer state
+- [x] Register all timer commands in `generate_handler![]` in `lib.rs`
+- [x] Update `build_tray_menu()` to accept timer state
   - `Running`: show `Timer: MM:SS` + `Stop Timer`
   - `AwaitingCheckin`: show `Timer complete` + `Open Check-in`
   - hide `Start Session` and `Pause Detection` while unresolved
-- [ ] Update `sync_tray_menu()` to read both `Mutex<DetectionState>` and `Mutex<TimerState>`
-- [ ] Add a concrete tray rebuild gate for timer mode
+- [x] Update `sync_tray_menu()` to read both `Mutex<DetectionState>` and `Mutex<TimerState>`
+- [x] Add a concrete tray rebuild gate for timer mode
   - no per-second rebuilds while countdown seconds change inside the same displayed minute
   - still rebuild immediately on `Running` / `AwaitingCheckin` / `Idle` transitions
-- [ ] Handle tray menu clicks
+- [x] Handle tray menu clicks
   - `Stop Timer` stops Rust immediately and enqueues a durable stop sync
   - `Open Check-in` opens the app to the unresolved session
-- [ ] Keep quit behavior simple — startup recovery and outbox replay handle mid-session exits
+- [x] Keep quit behavior simple — startup recovery and outbox replay handle mid-session exits
 
 ### Phase 4d: Frontend Timer UI And Session Flow
 
@@ -390,32 +390,32 @@ Replace the current menu items when the timer session is unresolved:
 
 **Tasks:**
 
-- [ ] Create `src/hooks/useTimer.tsx` — Context + Provider pattern matching `useDetection.tsx`
+- [x] Create `src/hooks/useTimer.tsx` — Context + Provider pattern matching `useDetection.tsx`
   - `listen("timer-state-changed")` for tick updates
   - Wrap `invoke("start_timer")`, `invoke("stop_timer")`, `invoke("extend_timer")`, `invoke("resolve_checkin")`, `invoke("get_timer_state")`
   - `isTauri()` guard for browser dev mode
   - Fetch initial state on mount and on window focus
-- [ ] Add `TimerProvider` to the provider tree in `src/main.tsx`
-- [ ] Replace `"confirmed"` with `"timer"` and add `"checkin"` to the `SessionStage` type in `useSessionFlow.ts`
-- [ ] Remove `ConfirmedCard.tsx` — its role is absorbed by the timer start action
-- [ ] Add new session-record queries in `src/lib/session-records.ts`
+- [x] Add `TimerProvider` to the provider tree in `src/main.tsx`
+- [x] Replace `"confirmed"` with `"timer"` and add `"checkin"` to the `SessionStage` type in `useSessionFlow.ts`
+- [x] Remove `ConfirmedCard.tsx` — its role is absorbed by the timer start action
+- [x] Add new session-record queries in `src/lib/session-records.ts`
   - `loadActiveTimerSession()`
   - `loadLatestTimerBlock(sessionId)`
   - `loadTimerBlocks(sessionId)` if needed for debugging / future history
-- [ ] Update `useSessionFlow` bootstrap
+- [x] Update `useSessionFlow` bootstrap
   - On mount: load the active timer session + latest block before draft loading
   - Compare durable latest-block state with `get_timer_state()`
   - If Rust is running or latest block is open -> show `"timer"`
   - If Rust is awaiting check-in, or the latest block is ended with `checked_in_at = null` and still inside the 12-hour grace window -> show `"checkin"`
   - Otherwise -> proceed with draft loading logic
-- [ ] Update `deriveStage()` in `useSessionFlow.ts` to handle timer/checkin stages
-- [ ] Update `Session.tsx` to render `Timer` component for `"timer"` stage and `CheckIn` for `"checkin"` stage
-- [ ] Build `src/components/session/Timer.tsx`
+- [x] Update `deriveStage()` in `useSessionFlow.ts` to handle timer/checkin stages
+- [x] Update `Session.tsx` to render `Timer` component for `"timer"` stage and `CheckIn` for `"checkin"` stage
+- [x] Build `src/components/session/Timer.tsx`
   - Large countdown display (MM:SS)
   - Current first step reminder text (from session steps JSONB)
   - "Stop" button -> confirms cancellation -> invokes `stop_timer` immediately -> flushes durable `stop_timer_block` sync
   - Warm, encouraging copy (e.g., "You're working on: [first step]")
-- [ ] Update `handleConfirm` in `useSessionFlow.ts`
+- [x] Update `handleConfirm` in `useSessionFlow.ts`
   - Call transactional `start_timer_block` RPC first
   - Invoke `start_timer` with the returned `block_id` and `started_at`
   - Transition directly to `"timer"` stage
@@ -426,23 +426,23 @@ Replace the current menu items when the timer session is unresolved:
 
 **Tasks:**
 
-- [ ] Build `src/components/session/CheckIn.tsx`
+- [x] Build `src/components/session/CheckIn.tsx`
   - Show timer completion message ("Time's up! How did it go?")
   - Three feedback buttons: "Yes, I got started" / "Somewhat" / "Not really"
   - Separate "Keep going (+25 min)" button — only shown if `timer_extended` is false
   - On feedback selection: call transactional `check_in_timer_session(...)`, then invoke `resolve_checkin()`, then show inline completion summary / redirect home
   - On extend: call transactional `start_extension_block(...)`, then invoke `extend_timer(...)`, then transition back to `"timer"`
-- [ ] Update `useSessionFlow` to handle timer completion event
+- [x] Update `useSessionFlow` to handle timer completion event
   - Listen for timer completion from `useTimer` context
   - Auto-transition from `"timer"` to `"checkin"` stage
 - [ ] Handle native notification on timer completion
   - Notification text: "Time's up! How did it go?" (warm, not aggressive)
   - Clicking notification -> show window -> frontend is already on `"checkin"` stage (or transitions to it)
-- [ ] Save `incomplete` status when user stops timer early
+- [x] Save `incomplete` status when user stops timer early
   - durable stop sync sets `timer_ended_at = now`, `status = 'incomplete'`
   - Rust timer state is already idle from the immediate stop
   - Redirect to home after durable save or queued replay acknowledgement
-- [ ] Implement outbox flush after auth/session bootstrap
+- [x] Implement outbox flush after auth/session bootstrap
   - load durable latest-block state before replaying local intents
   - drop stale or already-applied intents before replay
   - replay surviving intents in revision order
@@ -450,10 +450,10 @@ Replace the current menu items when the timer session is unresolved:
   - tray stop syncs
   - stale-checkin expire syncs
   - check-in idle-reset syncs if needed
-- [ ] Ensure detection suppression is cleared only when the timer session is resolved
+- [x] Ensure detection suppression is cleared only when the timer session is resolved
   - `Running` and `AwaitingCheckin` keep suppression on
   - `stop()` and `resolve_checkin()` clear suppression
-- [ ] Degrade stale uncollected check-ins after 12 hours
+- [x] Degrade stale uncollected check-ins after 12 hours
   - on startup/focus, if the latest ended block is still unchecked after 12 hours, clear suppression locally
   - enqueue or flush `expire_timer_checkin(...)`
   - do not block new sessions once the stale-checkin degradation path is active
@@ -464,19 +464,19 @@ Replace the current menu items when the timer session is unresolved:
 
 **Tasks:**
 
-- [ ] Implement Rust startup recovery from the local timer snapshot
+- [x] Implement Rust startup recovery from the local timer snapshot
   - Resume `Running` if deadline is still in the future
   - Convert to `AwaitingCheckin` if deadline already passed and the 12-hour grace window is still open
   - Convert to `Idle` + stale-expire replay if the check-in grace window already expired
-- [ ] Implement frontend reconciliation using the latest durable timer block
+- [x] Implement frontend reconciliation using the latest durable timer block
   - If Rust is idle but latest block is still open -> hydrate Rust and render timer
   - If Rust is running but durable state says completed / incomplete -> clear Rust and outbox
   - If the latest block is ended and `checked_in_at` is null inside the 12-hour grace window -> render check-in
   - If the latest block is ended and `checked_in_at` is null outside the grace window -> expire the stale check-in and do not block normal bootstrap
-- [ ] Handle navigation away during timer
+- [x] Handle navigation away during timer
   - `useTimer` context is app-wide (in `src/main.tsx`), not page-scoped
   - When user navigates to `/settings` and back to `/`, `useSessionFlow` bootstrap detects running timer and shows timer UI
-- [ ] Handle "Start Session" entry points during timer
+- [x] Handle "Start Session" entry points during timer
   - Tray "Start Session" is hidden while unresolved (Phase 4c)
   - If email deep link or other entry point tries to start a session, redirect to the running timer
 - [ ] Verify extension gap handling
@@ -490,40 +490,40 @@ Replace the current menu items when the timer session is unresolved:
 
 ### Functional Requirements
 
-- [ ] Timer starts when user confirms steps (25-minute default)
-- [ ] Countdown ticks every second in the UI
+- [x] Timer starts when user confirms steps (25-minute default)
+- [x] Countdown ticks every second in the UI
 - [ ] Timer continues running when the window is hidden or minimized
 - [ ] Timer completion fires a native notification
-- [ ] User can check in with yes / somewhat / no after completion
-- [ ] User can extend the timer once by +25 minutes starting from the moment they click extend
-- [ ] User can stop the timer early (session marked incomplete)
-- [ ] Stuck detection is suppressed while the timer session is unresolved
-- [ ] Detection resumes when the timer session is resolved by early stop or check-in
-- [ ] Detection does not stay suppressed forever because of an abandoned check-in; after 12 hours the stale-checkin degradation path clears suppression and stops blocking new sessions
-- [ ] Tray menu shows timer state during `Running` and a check-in entry point during `AwaitingCheckin`
-- [ ] Navigating away and back preserves the timer UI
-- [ ] App relaunch restores timer runtime from the local snapshot, then reconciles durable state after auth
+- [x] User can check in with yes / somewhat / no after completion
+- [x] User can extend the timer once by +25 minutes starting from the moment they click extend
+- [x] User can stop the timer early (session marked incomplete)
+- [x] Stuck detection is suppressed while the timer session is unresolved
+- [x] Detection resumes when the timer session is resolved by early stop or check-in
+- [x] Detection does not stay suppressed forever because of an abandoned check-in; after 12 hours the stale-checkin degradation path clears suppression and stops blocking new sessions
+- [x] Tray menu shows timer state during `Running` and a check-in entry point during `AwaitingCheckin`
+- [x] Navigating away and back preserves the timer UI
+- [x] App relaunch restores timer runtime from the local snapshot, then reconciles durable state after auth
 - [ ] Quitting or crashing mid-timer is recovered on next launch (resume or check-in)
-- [ ] Extension recovery uses the latest timer block, not aggregate session duration math
-- [ ] Partial session state is saved at each step
-- [ ] Check-in ends with an inline completion summary / home redirect rather than a dependency on Phase 5 history UI
+- [x] Extension recovery uses the latest timer block, not aggregate session duration math
+- [x] Partial session state is saved at each step
+- [x] Check-in ends with an inline completion summary / home redirect rather than a dependency on Phase 5 history UI
 
 ### Non-Functional Requirements
 
 - [ ] Timer accuracy within ~1 second over a 25-minute session
 - [ ] Timer handles system sleep/wake correctly (wall-clock deadline)
-- [ ] No content logging or new privacy-sensitive data collection
-- [ ] Warm, encouraging copy — no productivity jargon
-- [ ] Timer lifecycle mutations are replay-safe across crashes and retries
-- [ ] Recovery ordering between durable state, local snapshot, and outbox intents is deterministic
+- [x] No content logging or new privacy-sensitive data collection
+- [x] Warm, encouraging copy — no productivity jargon
+- [x] Timer lifecycle mutations are replay-safe across crashes and retries
+- [x] Recovery ordering between durable state, local snapshot, and outbox intents is deterministic
 
 ### Quality Gates
 
-- [ ] Rust state machine has unit tests for all transitions
+- [x] Rust state machine has unit tests for all transitions
 - [ ] Timer tested while window is visible, hidden, and tray-only
 - [ ] Timer tested across sleep/wake (manual verification)
 - [ ] Crash recovery tested: kill process mid-timer, relaunch, verify recovery
-- [ ] Extension tested: extend once, verify second extension blocked
+- [x] Extension tested: extend once, verify second extension blocked
 - [ ] Extension tested after a delayed check-in: block 2 still gets a full 25 minutes
 - [ ] Check-in data persists correctly to Supabase
 - [ ] `session_timer_blocks` reflects exact start/end times for both initial and extension blocks

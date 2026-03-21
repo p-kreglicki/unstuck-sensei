@@ -10,6 +10,10 @@ use crate::{
         recover_detection_state_lock, DetectionState, DetectionStatusResponse, Sensitivity,
     },
     execute_detection_effects,
+    timer::{
+        execute_timer_effects, maybe_spawn_tick_loop, recover_timer_state_lock, TimerPendingSync,
+        TimerRuntimeEffect, TimerState, TimerStatusResponse, parse_timestamp,
+    },
 };
 
 const APP_PREFERENCES_STORE: &str = "app-preferences.json";
@@ -21,6 +25,14 @@ fn with_detection_state<T>(
 ) -> Result<T, String> {
     let mut state = recover_detection_state_lock(state.inner(), "commands");
 
+    Ok(handler(&mut state))
+}
+
+fn with_timer_state<T>(
+    state: &State<'_, Mutex<TimerState>>,
+    handler: impl FnOnce(&mut TimerState) -> T,
+) -> Result<T, String> {
+    let mut state = recover_timer_state_lock(state.inner(), "commands");
     Ok(handler(&mut state))
 }
 
@@ -146,6 +158,160 @@ fn maybe_request_notification_permission(app: &AppHandle<Wry>, signed_in: bool) 
             "failed to persist notification permission flag: {error}"
         ));
     }
+}
+
+#[tauri::command]
+pub fn start_timer(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<TimerState>>,
+    session_id: String,
+    block_id: String,
+    started_at: String,
+    duration_secs: u32,
+    timer_revision: i32,
+) -> Result<TimerStatusResponse, String> {
+    let started_at = parse_timestamp(&started_at)?;
+    let effects = with_timer_state(&state, |state| {
+        state.start(session_id, block_id, started_at, duration_secs, timer_revision)
+    })??;
+
+    execute_timer_effects(&app, effects)?;
+    maybe_spawn_tick_loop(app.clone());
+
+    get_timer_state(state)
+}
+
+#[tauri::command]
+pub fn stop_timer(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<TimerState>>,
+) -> Result<TimerStatusResponse, String> {
+    let effects = with_timer_state(&state, |state| state.stop())??;
+    execute_timer_effects(&app, effects)?;
+    get_timer_state(state)
+}
+
+#[tauri::command]
+pub fn extend_timer(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<TimerState>>,
+    session_id: String,
+    block_id: String,
+    started_at: String,
+    duration_secs: u32,
+    timer_revision: i32,
+) -> Result<TimerStatusResponse, String> {
+    let started_at = parse_timestamp(&started_at)?;
+    let effects = with_timer_state(&state, |state| {
+        state.extend(session_id, block_id, started_at, duration_secs, timer_revision)
+    })??;
+
+    execute_timer_effects(&app, effects)?;
+    maybe_spawn_tick_loop(app.clone());
+
+    get_timer_state(state)
+}
+
+#[tauri::command]
+pub fn resolve_checkin(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<TimerState>>,
+) -> Result<TimerStatusResponse, String> {
+    let effects = with_timer_state(&state, |state| state.resolve_checkin())??;
+    execute_timer_effects(&app, effects)?;
+    get_timer_state(state)
+}
+
+#[tauri::command]
+pub fn get_timer_state(
+    state: State<'_, Mutex<TimerState>>,
+) -> Result<TimerStatusResponse, String> {
+    with_timer_state(&state, |state| state.status_response())
+}
+
+#[tauri::command]
+pub fn get_pending_timer_syncs(
+    state: State<'_, Mutex<TimerState>>,
+) -> Result<Vec<TimerPendingSync>, String> {
+    with_timer_state(&state, |state| state.pending_syncs.clone())
+}
+
+#[tauri::command]
+pub fn clear_pending_timer_syncs(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<TimerState>>,
+    sync_ids: Vec<String>,
+) -> Result<(), String> {
+    with_timer_state(&state, |state| {
+        state.pending_syncs.retain(|sync| !sync_ids.contains(&sync.id));
+    })?;
+
+    execute_timer_effects(&app, vec![TimerRuntimeEffect::PersistSnapshot])
+}
+
+#[tauri::command]
+pub fn hydrate_running_timer(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<TimerState>>,
+    session_id: String,
+    block_id: String,
+    started_at: String,
+    duration_secs: u32,
+    extended: bool,
+    timer_revision: i32,
+) -> Result<TimerStatusResponse, String> {
+    let started_at = parse_timestamp(&started_at)?;
+    let effects = with_timer_state(&state, |state| {
+        state.hydrate_running(
+            session_id,
+            block_id,
+            started_at,
+            duration_secs,
+            extended,
+            timer_revision,
+        )
+    })?;
+
+    execute_timer_effects(&app, effects)?;
+    maybe_spawn_tick_loop(app.clone());
+    get_timer_state(state)
+}
+
+#[tauri::command]
+pub fn hydrate_awaiting_checkin(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<TimerState>>,
+    session_id: String,
+    block_id: String,
+    checkin_started_at: String,
+    duration_secs: u32,
+    extended: bool,
+    timer_revision: i32,
+) -> Result<TimerStatusResponse, String> {
+    let checkin_started_at = parse_timestamp(&checkin_started_at)?;
+    let effects = with_timer_state(&state, |state| {
+        state.hydrate_awaiting_checkin(
+            session_id,
+            block_id,
+            checkin_started_at,
+            duration_secs,
+            extended,
+            timer_revision,
+        )
+    })?;
+
+    execute_timer_effects(&app, effects)?;
+    get_timer_state(state)
+}
+
+#[tauri::command]
+pub fn clear_timer_state(
+    app: AppHandle<Wry>,
+    state: State<'_, Mutex<TimerState>>,
+) -> Result<TimerStatusResponse, String> {
+    let effects = with_timer_state(&state, |state| state.clear_runtime())?;
+    execute_timer_effects(&app, effects)?;
+    get_timer_state(state)
 }
 
 fn log_nonblocking_error(message: &str) {

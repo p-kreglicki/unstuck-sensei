@@ -9,7 +9,7 @@ export function toDisplayError(error: unknown, fallbackMessage: string) {
     /relation .* does not exist/i.test(message) ||
     /column .* does not exist/i.test(message)
   ) {
-    return `Database setup is incomplete. ${message} Run the Supabase migrations for this project and retry.`;
+    return "Database setup is incomplete. Run the Supabase migrations for this project and retry.";
   }
 
   return message;

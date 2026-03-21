@@ -32,6 +32,7 @@ yarn-error.log*
 .idea/
 *.tsbuildinfo
 next-env.d.ts
+supabase/.temp/
 
 # local planning artifacts
 /todos/

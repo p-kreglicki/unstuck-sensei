@@ -5,6 +5,7 @@ use std::sync::{
 
 mod commands;
 mod detection;
+mod timer;
 
 use serde::Serialize;
 use tauri::{
@@ -17,12 +18,18 @@ use crate::detection::{
     execute_runtime_effects, recover_detection_state_lock, DetectionRuntimeEffect, DetectionState,
     DetectionStatus,
 };
+use crate::timer::{
+    execute_timer_effects, recover_timer_state_lock, TimerState, TimerStatus,
+    TimerStatusResponse,
+};
 
 const TRAY_ID: &str = "main";
 const APP_NAVIGATE_EVENT: &str = "app:navigate";
 const MENU_SIGN_IN: &str = "sign-in";
 const MENU_START_SESSION: &str = "start-session";
 const MENU_PAUSE_DETECTION: &str = "pause-detection";
+const MENU_STOP_TIMER: &str = "stop-timer";
+const MENU_OPEN_CHECKIN: &str = "open-checkin";
 const MENU_SETTINGS: &str = "settings";
 const MENU_QUIT: &str = "quit";
 
@@ -37,10 +44,49 @@ fn build_tray_menu<M: Manager<Wry>>(
     manager: &M,
     signed_in: bool,
     detection_status: DetectionStatus,
+    timer_status: TimerStatusResponse,
 ) -> tauri::Result<tauri::menu::Menu<Wry>> {
     let quit = MenuItemBuilder::with_id(MENU_QUIT, "Quit").build(manager)?;
 
     if signed_in {
+        match timer_status.status {
+            TimerStatus::Running => {
+                let timer_label = MenuItemBuilder::with_id(
+                    "timer-remaining",
+                    format_timer_label(timer_status.remaining_secs),
+                )
+                .enabled(false)
+                .build(manager)?;
+                let stop_timer =
+                    MenuItemBuilder::with_id(MENU_STOP_TIMER, "Stop Timer").build(manager)?;
+                let settings =
+                    MenuItemBuilder::with_id(MENU_SETTINGS, "Settings").build(manager)?;
+                let separator = PredefinedMenuItem::separator(manager)?;
+
+                return MenuBuilder::new(manager)
+                    .items(&[&timer_label, &stop_timer, &separator, &settings, &quit])
+                    .build();
+            }
+            TimerStatus::AwaitingCheckin => {
+                let timer_complete = MenuItemBuilder::with_id(
+                    "timer-complete",
+                    "Timer complete",
+                )
+                .enabled(false)
+                .build(manager)?;
+                let open_checkin =
+                    MenuItemBuilder::with_id(MENU_OPEN_CHECKIN, "Open Check-in").build(manager)?;
+                let settings =
+                    MenuItemBuilder::with_id(MENU_SETTINGS, "Settings").build(manager)?;
+                let separator = PredefinedMenuItem::separator(manager)?;
+
+                return MenuBuilder::new(manager)
+                    .items(&[&timer_complete, &open_checkin, &separator, &settings, &quit])
+                    .build();
+            }
+            TimerStatus::Idle => {}
+        }
+
         let (pause_label, pause_enabled) = pause_menu_state(detection_status);
         let start_session =
             MenuItemBuilder::with_id(MENU_START_SESSION, "Start Session").build(manager)?;
@@ -66,6 +112,13 @@ fn build_tray_menu<M: Manager<Wry>>(
     }
 }
 
+fn format_timer_label(remaining_secs: Option<u32>) -> String {
+    let remaining = remaining_secs.unwrap_or(0);
+    let minutes = remaining / 60;
+    let seconds = remaining % 60;
+    format!("Timer: {minutes:02}:{seconds:02}")
+}
+
 fn pause_menu_state(status: DetectionStatus) -> (&'static str, bool) {
     match status {
         DetectionStatus::Paused => ("Resume Detection", true),
@@ -78,12 +131,14 @@ fn pause_menu_state(status: DetectionStatus) -> (&'static str, bool) {
 
 pub(crate) fn sync_tray_menu(app: &AppHandle<Wry>) -> Result<(), String> {
     let detection_state = app.state::<Mutex<DetectionState>>();
-    let state = recover_detection_state_lock(detection_state.inner(), "tray_menu");
+    let detection = recover_detection_state_lock(detection_state.inner(), "tray_menu");
+    let timer_state = app.state::<Mutex<TimerState>>();
+    let timer = recover_timer_state_lock(timer_state.inner(), "tray_menu");
     let tray = app
         .tray_by_id(TRAY_ID)
         .ok_or_else(|| "Main tray icon not available.".to_string())?;
-    let menu =
-        build_tray_menu(app, state.signed_in, state.status).map_err(|error| error.to_string())?;
+    let menu = build_tray_menu(app, detection.signed_in, detection.status, timer.status_response())
+        .map_err(|error| error.to_string())?;
 
     tray.set_menu(Some(menu)).map_err(|error| error.to_string())
 }
@@ -179,19 +234,40 @@ fn toggle_detection_pause(app: &AppHandle<Wry>) -> Result<(), String> {
     execute_detection_effects(app, effects, false)
 }
 
+fn stop_timer_from_tray(app: &AppHandle<Wry>) -> Result<(), String> {
+    let timer_state = app.state::<Mutex<TimerState>>();
+    let effects = {
+        let mut state = recover_timer_state_lock(timer_state.inner(), "tray_stop_timer");
+        state.stop()?
+    };
+
+    execute_timer_effects(app, effects)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let window_visible = Arc::new(AtomicBool::new(true));
 
     let app = tauri::Builder::default()
         .manage(Mutex::new(detection::DetectionState::new()))
+        .manage(Mutex::new(timer::TimerState::new()))
         .invoke_handler(tauri::generate_handler![
             commands::sync_detection_config,
             commands::get_detection_status,
             commands::get_detection_debug,
             commands::pause_detection,
             commands::resume_detection,
-            commands::dismiss_nudge
+            commands::dismiss_nudge,
+            commands::start_timer,
+            commands::stop_timer,
+            commands::extend_timer,
+            commands::resolve_checkin,
+            commands::get_timer_state,
+            commands::get_pending_timer_syncs,
+            commands::clear_pending_timer_syncs,
+            commands::hydrate_running_timer,
+            commands::hydrate_awaiting_checkin,
+            commands::clear_timer_state
         ]);
     let app = app
         .plugin(tauri_plugin_deep_link::init())
@@ -218,7 +294,20 @@ pub fn run() {
             move |app| {
                 detection::platform::setup(&app.handle());
 
-                let tray_menu = build_tray_menu(app, false, DetectionStatus::Disabled)?;
+                let tray_menu = build_tray_menu(
+                    app,
+                    false,
+                    DetectionStatus::Disabled,
+                    TimerStatusResponse {
+                        current_block_id: None,
+                        duration_secs: None,
+                        extended: false,
+                        remaining_secs: None,
+                        session_id: None,
+                        status: TimerStatus::Idle,
+                        timer_revision: None,
+                    },
+                )?;
 
                 let mut tray_builder = TrayIconBuilder::with_id(TRAY_ID)
                     .menu(&tray_menu)
@@ -242,6 +331,14 @@ pub fn run() {
                                 if let Err(error) = toggle_detection_pause(app) {
                                     eprintln!("[tray] failed to toggle detection pause: {error}");
                                 }
+                            }
+                            MENU_STOP_TIMER => {
+                                if let Err(error) = stop_timer_from_tray(app) {
+                                    eprintln!("[tray] failed to stop timer: {error}");
+                                }
+                            }
+                            MENU_OPEN_CHECKIN => {
+                                show_main_window_and_route(app, &window_visible, "/", Some("tray"))
                             }
                             MENU_QUIT => app.exit(0),
                             _ => {}
@@ -286,6 +383,7 @@ pub fn run() {
                     &app.handle(),
                     window_visible.load(Ordering::SeqCst),
                 );
+                timer::restore_runtime(&app.handle())?;
 
                 Ok(())
             }

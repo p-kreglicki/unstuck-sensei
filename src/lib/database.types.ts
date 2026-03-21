@@ -132,6 +132,7 @@ export type Database = {
       };
       sessions: {
         Row: {
+          checked_in_at: string | null;
           clarifying_answer: string | null;
           clarifying_question: string | null;
           created_at: string;
@@ -145,11 +146,13 @@ export type Database = {
           timer_duration_seconds: number | null;
           timer_ended_at: string | null;
           timer_extended: boolean | null;
+          timer_revision: number;
           timer_started_at: string | null;
           updated_at: string;
           user_id: string;
         };
         Insert: {
+          checked_in_at?: string | null;
           clarifying_answer?: string | null;
           clarifying_question?: string | null;
           created_at?: string;
@@ -163,11 +166,13 @@ export type Database = {
           timer_duration_seconds?: number | null;
           timer_ended_at?: string | null;
           timer_extended?: boolean | null;
+          timer_revision?: number;
           timer_started_at?: string | null;
           updated_at?: string;
           user_id: string;
         };
         Update: {
+          checked_in_at?: string | null;
           clarifying_answer?: string | null;
           clarifying_question?: string | null;
           created_at?: string;
@@ -181,6 +186,7 @@ export type Database = {
           timer_duration_seconds?: number | null;
           timer_ended_at?: string | null;
           timer_extended?: boolean | null;
+          timer_revision?: number;
           timer_started_at?: string | null;
           updated_at?: string;
           user_id?: string;
@@ -195,9 +201,116 @@ export type Database = {
           },
         ];
       };
+      session_timer_blocks: {
+        Row: {
+          block_index: number;
+          created_at: string;
+          duration_seconds: number;
+          ended_at: string | null;
+          id: string;
+          kind: "extension" | "initial";
+          session_id: string;
+          started_at: string;
+        };
+        Insert: {
+          block_index: number;
+          created_at?: string;
+          duration_seconds: number;
+          ended_at?: string | null;
+          id?: string;
+          kind: "extension" | "initial";
+          session_id: string;
+          started_at: string;
+        };
+        Update: {
+          block_index?: number;
+          created_at?: string;
+          duration_seconds?: number;
+          ended_at?: string | null;
+          id?: string;
+          kind?: "extension" | "initial";
+          session_id?: string;
+          started_at?: string;
+        };
+        Relationships: [
+          {
+            columns: ["session_id"];
+            foreignKeyName: "session_timer_blocks_session_id_fkey";
+            isOneToOne: false;
+            referencedColumns: ["id"];
+            referencedRelation: "sessions";
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      check_in_timer_session: {
+        Args: {
+          input_checked_in_at: string;
+          input_expected_revision: number;
+          input_feedback: string;
+          input_session_id: string;
+        };
+        Returns: Json;
+      };
+      complete_timer_block: {
+        Args: {
+          input_block_id: string;
+          input_ended_at: string;
+          input_expected_revision: number;
+        };
+        Returns: Json;
+      };
+      expire_timer_checkin: {
+        Args: {
+          input_expected_revision: number;
+          input_expired_at: string;
+          input_session_id: string;
+        };
+        Returns: Json;
+      };
+      revert_extension_start: {
+        Args: {
+          input_expected_revision: number;
+          input_session_id: string;
+        };
+        Returns: Json;
+      };
+      revert_timer_start: {
+        Args: {
+          input_expected_revision: number;
+          input_session_id: string;
+        };
+        Returns: Json;
+      };
+      start_extension_block: {
+        Args: {
+          input_duration_seconds: number;
+          input_expected_revision: number;
+          input_session_id: string;
+          input_started_at: string;
+        };
+        Returns: Json;
+      };
+      start_timer_block: {
+        Args: {
+          input_duration_seconds: number;
+          input_expected_revision: number;
+          input_session_id: string;
+          input_started_at: string;
+        };
+        Returns: Json;
+      };
+      stop_timer_block: {
+        Args: {
+          input_block_id: string;
+          input_ended_at: string;
+          input_expected_revision: number;
+        };
+        Returns: Json;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
