@@ -197,7 +197,7 @@ describe("Session", () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          'Database setup is incomplete. relation "public.sessions" does not exist Run the Supabase migrations for this project and retry.',
+          "Database setup is incomplete. Run the Supabase migrations for this project and retry.",
         ),
       ).toBeInTheDocument();
     });
