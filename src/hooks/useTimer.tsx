@@ -41,6 +41,7 @@ type PendingTimerSync = {
 type TimerContextValue = {
   clearPendingSyncs(syncIds: string[]): Promise<void>;
   clearRuntime(): Promise<TimerCommandState>;
+  ensureCheckinDurable(input: EnsureCheckinDurableInput): Promise<DurableCheckinState>;
   extendTimer(input: TimerMutationInput): Promise<TimerCommandState>;
   getPendingSyncs(): Promise<PendingTimerSync[]>;
   hydrateAwaitingCheckin(input: AwaitingCheckinHydrationInput): Promise<TimerCommandState>;
@@ -66,6 +67,20 @@ type AwaitingCheckinHydrationInput = {
   durationSecs: number;
   extended: boolean;
   sessionId: string;
+  timerRevision: number;
+};
+
+type EnsureCheckinDurableInput = {
+  durationSecs: number;
+  extended: boolean;
+  fallbackEndedAt: string | null;
+  fallbackRevision: number;
+  latestBlockId: string | null;
+  sessionId: string;
+};
+
+type DurableCheckinState = {
+  endedAt: string | null;
   timerRevision: number;
 };
 
@@ -119,25 +134,55 @@ async function runTimerCommand(
 export function TimerProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [state, setState] = useState<TimerCommandState>(defaultTimerState);
+  const stateRef = useRef(defaultTimerState);
+  const pendingSyncLockRef = useRef<Promise<void>>(Promise.resolve());
   const replayPendingSyncsInFlightRef = useRef<Promise<void> | null>(null);
   const replayPendingSyncsQueuedRef = useRef(false);
 
+  const applyState = useCallback((nextState: TimerCommandState) => {
+    stateRef.current = nextState;
+    setState(nextState);
+  }, []);
+
+  const runPendingSyncExclusive = useCallback(async <T,>(
+    work: () => Promise<T>,
+  ): Promise<T> => {
+    const previousLock = pendingSyncLockRef.current;
+    let releaseLock!: () => void;
+    const currentLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+
+    pendingSyncLockRef.current = currentLock;
+    await previousLock;
+
+    try {
+      return await work();
+    } finally {
+      releaseLock();
+
+      if (pendingSyncLockRef.current === currentLock) {
+        pendingSyncLockRef.current = Promise.resolve();
+      }
+    }
+  }, []);
+
   const refreshStatus = useCallback(async (): Promise<TimerCommandState> => {
     if (!isTauri()) {
-      setState(defaultTimerState);
+      applyState(defaultTimerState);
       return defaultTimerState;
     }
 
     const nextState = await runTimerCommand(
       "get_timer_state",
     ) as TimerCommandState;
-    setState(nextState);
+    applyState(nextState);
     return nextState;
-  }, []);
+  }, [applyState]);
 
   const startTimer = useCallback(async (input: TimerMutationInput) => {
     if (!isTauri()) {
-      setState(defaultTimerState);
+      applyState(defaultTimerState);
       return defaultTimerState;
     }
 
@@ -148,24 +193,24 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       startedAt: input.startedAt,
       timerRevision: input.timerRevision,
     }) as TimerCommandState;
-    setState(nextState);
+    applyState(nextState);
     return nextState;
-  }, []);
+  }, [applyState]);
 
   const stopTimer = useCallback(async () => {
     if (!isTauri()) {
-      setState(defaultTimerState);
+      applyState(defaultTimerState);
       return defaultTimerState;
     }
 
     const nextState = await runTimerCommand("stop_timer") as TimerCommandState;
-    setState(nextState);
+    applyState(nextState);
     return nextState;
-  }, []);
+  }, [applyState]);
 
   const extendTimer = useCallback(async (input: TimerMutationInput) => {
     if (!isTauri()) {
-      setState(defaultTimerState);
+      applyState(defaultTimerState);
       return defaultTimerState;
     }
 
@@ -176,26 +221,26 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       startedAt: input.startedAt,
       timerRevision: input.timerRevision,
     }) as TimerCommandState;
-    setState(nextState);
+    applyState(nextState);
     return nextState;
-  }, []);
+  }, [applyState]);
 
   const resolveCheckin = useCallback(async () => {
     if (!isTauri()) {
-      setState(defaultTimerState);
+      applyState(defaultTimerState);
       return defaultTimerState;
     }
 
     const nextState = await runTimerCommand("resolve_checkin") as TimerCommandState;
-    setState(nextState);
+    applyState(nextState);
     return nextState;
-  }, []);
+  }, [applyState]);
 
   const hydrateRunning = useCallback(async (
     input: TimerMutationInput & { extended: boolean },
   ) => {
     if (!isTauri()) {
-      setState(defaultTimerState);
+      applyState(defaultTimerState);
       return defaultTimerState;
     }
 
@@ -207,15 +252,15 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       startedAt: input.startedAt,
       timerRevision: input.timerRevision,
     }) as TimerCommandState;
-    setState(nextState);
+    applyState(nextState);
     return nextState;
-  }, []);
+  }, [applyState]);
 
   const hydrateAwaitingCheckin = useCallback(async (
     input: AwaitingCheckinHydrationInput,
   ) => {
     if (!isTauri()) {
-      setState(defaultTimerState);
+      applyState(defaultTimerState);
       return defaultTimerState;
     }
 
@@ -227,20 +272,20 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       sessionId: input.sessionId,
       timerRevision: input.timerRevision,
     }) as TimerCommandState;
-    setState(nextState);
+    applyState(nextState);
     return nextState;
-  }, []);
+  }, [applyState]);
 
   const clearRuntime = useCallback(async () => {
     if (!isTauri()) {
-      setState(defaultTimerState);
+      applyState(defaultTimerState);
       return defaultTimerState;
     }
 
     const nextState = await runTimerCommand("clear_timer_state") as TimerCommandState;
-    setState(nextState);
+    applyState(nextState);
     return nextState;
-  }, []);
+  }, [applyState]);
 
   const getPendingSyncs = useCallback(async () => {
     if (!isTauri()) {
@@ -259,6 +304,73 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       syncIds,
     });
   }, []);
+
+  const ensureCheckinDurable = useCallback(async (
+    input: EnsureCheckinDurableInput,
+  ): Promise<DurableCheckinState> => {
+    if (!isTauri()) {
+      applyState(defaultTimerState);
+      return {
+        endedAt: input.fallbackEndedAt,
+        timerRevision: input.fallbackRevision,
+      };
+    }
+
+    return runPendingSyncExclusive(async () => {
+      const pendingSync = (await getPendingSyncs()).find(
+        (sync) =>
+          sync.kind === "complete_block" &&
+          sync.sessionId === input.sessionId &&
+          (input.latestBlockId === null || sync.blockId === input.latestBlockId),
+      );
+
+      if (!pendingSync) {
+        const latestBlock =
+          input.fallbackEndedAt === null
+            ? await loadLatestTimerBlock(input.sessionId)
+            : null;
+
+        return {
+          endedAt: latestBlock?.ended_at ?? input.fallbackEndedAt,
+          timerRevision: stateRef.current.timerRevision ?? input.fallbackRevision,
+        };
+      }
+
+      const blockId = pendingSync.blockId ?? input.latestBlockId;
+
+      if (!blockId) {
+        throw new Error("Timer completion sync is missing a block id.");
+      }
+
+      const result = await completeTimerBlock({
+        blockId,
+        endedAt: pendingSync.occurredAt,
+        expectedRevision: pendingSync.expectedRevision,
+      });
+      const checkinStartedAt = result.endedAt ?? pendingSync.occurredAt;
+
+      await clearPendingSyncs([pendingSync.id]);
+      const nextState = await hydrateAwaitingCheckin({
+        blockId,
+        checkinStartedAt,
+        durationSecs: input.durationSecs,
+        extended: input.extended,
+        sessionId: input.sessionId,
+        timerRevision: result.timerRevision,
+      });
+
+      return {
+        endedAt: checkinStartedAt,
+        timerRevision: nextState.timerRevision ?? result.timerRevision,
+      };
+    });
+  }, [
+    applyState,
+    clearPendingSyncs,
+    getPendingSyncs,
+    hydrateAwaitingCheckin,
+    runPendingSyncExclusive,
+  ]);
 
   const replayPendingSyncsPass = useCallback(async () => {
     if (!isTauri() || !user?.id) {
@@ -412,7 +524,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       try {
         do {
           replayPendingSyncsQueuedRef.current = false;
-          await replayPendingSyncsPass();
+          await runPendingSyncExclusive(replayPendingSyncsPass);
         } while (replayPendingSyncsQueuedRef.current);
       } finally {
         replayPendingSyncsInFlightRef.current = null;
@@ -421,7 +533,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
 
     replayPendingSyncsInFlightRef.current = replayPromise;
     return replayPromise;
-  }, [replayPendingSyncsPass]);
+  }, [replayPendingSyncsPass, runPendingSyncExclusive]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -432,7 +544,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
 
     const applyStatus = (nextState: TimerCommandState) => {
       if (active) {
-        setState(nextState);
+        applyState(nextState);
       }
     };
 
@@ -471,23 +583,24 @@ export function TimerProvider({ children }: { children: ReactNode }) {
         unlisten();
       });
     };
-  }, [refreshStatus, replayPendingSyncs]);
+  }, [applyState, refreshStatus, replayPendingSyncs]);
 
   useEffect(() => {
     if (!user?.id) {
-      setState(defaultTimerState);
+      applyState(defaultTimerState);
       return;
     }
 
     void replayPendingSyncs().catch((error) => {
       logTimerError("failed to replay pending timer syncs after auth", error);
     });
-  }, [replayPendingSyncs, user?.id]);
+  }, [applyState, replayPendingSyncs, user?.id]);
 
   const value = useMemo<TimerContextValue>(
     () => ({
       clearPendingSyncs,
       clearRuntime,
+      ensureCheckinDurable,
       extendTimer,
       getPendingSyncs,
       hydrateAwaitingCheckin,
@@ -501,6 +614,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     [
       clearPendingSyncs,
       clearRuntime,
+      ensureCheckinDurable,
       extendTimer,
       getPendingSyncs,
       hydrateAwaitingCheckin,

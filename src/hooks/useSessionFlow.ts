@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "./useAuth";
 import { useChat } from "./useChat";
 import { useTimer } from "./useTimer";
@@ -9,7 +9,6 @@ import {
 } from "../../shared/session/session-input-limits.js";
 import {
   checkInTimerSession,
-  completeTimerBlock,
   createSessionDraft,
   expireTimerCheckin,
   insertConversationMessage,
@@ -125,6 +124,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
   const {
     clearPendingSyncs,
     clearRuntime,
+    ensureCheckinDurable: ensureTimerCheckinDurable,
     extendTimer,
     getPendingSyncs,
     hydrateAwaitingCheckin,
@@ -139,6 +139,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isSubmittingTimerAction, setIsSubmittingTimerAction] = useState(false);
+  const timerActionInFlightRef = useRef(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [sessionRow, setSessionRow] = useState<SessionRow | null>(null);
   const [latestTimerBlock, setLatestTimerBlock] = useState<SessionTimerBlockRow | null>(
@@ -594,132 +595,33 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     }
   }
 
-  async function handleConfirm() {
-    if (!sessionRow) {
+  async function runTimerAction(action: () => Promise<void>) {
+    if (timerActionInFlightRef.current) {
       return;
     }
 
+    timerActionInFlightRef.current = true;
     setIsSubmittingTimerAction(true);
     setStatusMessage(null);
 
-    const startedAt = new Date().toISOString();
-
     try {
-      const result = await startTimerBlock({
-        durationSeconds: TIMER_DURATION_SECONDS,
-        expectedRevision: sessionRow.timer_revision,
-        sessionId: sessionRow.id,
-        startedAt,
-      });
-      const blockId = requireBlockId(
-        result.blockId,
-        "Timer start did not return a block id.",
-      );
-
-      try {
-        await startTimer({
-          blockId,
-          durationSecs: result.durationSeconds ?? TIMER_DURATION_SECONDS,
-          sessionId: sessionRow.id,
-          startedAt: result.startedAt ?? startedAt,
-          timerRevision: result.timerRevision,
-        });
-      } catch (error) {
-        const revertResult = await revertTimerStart({
-          expectedRevision: result.timerRevision,
-          sessionId: sessionRow.id,
-        }).catch(() => null);
-
-        if (revertResult) {
-          setSessionRow((current) =>
-            current
-              ? {
-                  ...current,
-                  timer_duration_seconds: null,
-                  timer_ended_at: null,
-                  timer_extended: false,
-                  timer_revision: revertResult.timerRevision,
-                  timer_started_at: null,
-                }
-              : current,
-          );
-        }
-
-        throw error;
-      }
-
-      setSessionRow((current) =>
-        current
-          ? {
-              ...current,
-              timer_duration_seconds: result.durationSeconds ?? TIMER_DURATION_SECONDS,
-              timer_ended_at: null,
-              timer_extended: false,
-              timer_revision: result.timerRevision,
-              timer_started_at: result.startedAt ?? startedAt,
-            }
-          : current,
-      );
-      setLatestTimerBlock({
-        block_index: 1,
-        created_at: result.startedAt ?? startedAt,
-        duration_seconds: result.durationSeconds ?? TIMER_DURATION_SECONDS,
-        ended_at: null,
-        id: blockId,
-        kind: "initial",
-        session_id: sessionRow.id,
-        started_at: result.startedAt ?? startedAt,
-      });
-    } catch (error) {
-      setStatusMessage(toDisplayError(error, "Unable to start the timer."));
+      await action();
     } finally {
+      timerActionInFlightRef.current = false;
       setIsSubmittingTimerAction(false);
     }
   }
 
-  async function ensureCheckinDurable(currentSession: SessionRow) {
-    const pendingSync = (await getPendingSyncs()).find(
-      (sync) =>
-        sync.kind === "complete_block" &&
-        sync.sessionId === currentSession.id &&
-        (!latestTimerBlock || sync.blockId === latestTimerBlock.id),
-    );
-
-    if (!pendingSync) {
-      return {
-        endedAt: latestTimerBlock?.ended_at ?? currentSession.timer_ended_at,
-        timerRevision: timer.state.timerRevision ?? currentSession.timer_revision,
-      };
-    }
-
-    const blockId = pendingSync.blockId ?? latestTimerBlock?.id;
-
-    if (!blockId) {
-      throw new Error("Timer completion sync is missing a block id.");
-    }
-
-    const result = await completeTimerBlock({
-      blockId,
-      endedAt: pendingSync.occurredAt,
-      expectedRevision: pendingSync.expectedRevision,
-    });
-
-    await clearPendingSyncs([pendingSync.id]);
-    await hydrateAwaitingCheckin({
-      blockId,
-      checkinStartedAt: result.endedAt ?? pendingSync.occurredAt,
-      durationSecs: latestTimerBlock?.duration_seconds ?? TIMER_DURATION_SECONDS,
-      extended: currentSession.timer_extended ?? false,
-      sessionId: currentSession.id,
-      timerRevision: result.timerRevision,
-    });
-
+  function applyDurableCheckinState(checkinState: {
+    endedAt: string | null;
+    timerRevision: number;
+  }) {
     setSessionRow((current) =>
       current
         ? {
             ...current,
-            timer_ended_at: result.endedAt ?? pendingSync.occurredAt,
-            timer_revision: result.timerRevision,
+            timer_ended_at: checkinState.endedAt ?? current.timer_ended_at,
+            timer_revision: checkinState.timerRevision,
           }
         : current,
     );
@@ -727,15 +629,90 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
       current
         ? {
             ...current,
-            ended_at: result.endedAt ?? pendingSync.occurredAt,
+            ended_at: checkinState.endedAt ?? current.ended_at,
           }
         : current,
     );
+  }
 
-    return {
-      endedAt: result.endedAt ?? pendingSync.occurredAt,
-      timerRevision: result.timerRevision,
-    };
+  async function handleConfirm() {
+    if (!sessionRow) {
+      return;
+    }
+
+    await runTimerAction(async () => {
+      const startedAt = new Date().toISOString();
+
+      try {
+        const result = await startTimerBlock({
+          durationSeconds: TIMER_DURATION_SECONDS,
+          expectedRevision: sessionRow.timer_revision,
+          sessionId: sessionRow.id,
+          startedAt,
+        });
+        const blockId = requireBlockId(
+          result.blockId,
+          "Timer start did not return a block id.",
+        );
+
+        try {
+          await startTimer({
+            blockId,
+            durationSecs: result.durationSeconds ?? TIMER_DURATION_SECONDS,
+            sessionId: sessionRow.id,
+            startedAt: result.startedAt ?? startedAt,
+            timerRevision: result.timerRevision,
+          });
+        } catch (error) {
+          const revertResult = await revertTimerStart({
+            expectedRevision: result.timerRevision,
+            sessionId: sessionRow.id,
+          }).catch(() => null);
+
+          if (revertResult) {
+            setSessionRow((current) =>
+              current
+                ? {
+                    ...current,
+                    timer_duration_seconds: null,
+                    timer_ended_at: null,
+                    timer_extended: false,
+                    timer_revision: revertResult.timerRevision,
+                    timer_started_at: null,
+                  }
+                : current,
+            );
+          }
+
+          throw error;
+        }
+
+        setSessionRow((current) =>
+          current
+            ? {
+                ...current,
+                timer_duration_seconds: result.durationSeconds ?? TIMER_DURATION_SECONDS,
+                timer_ended_at: null,
+                timer_extended: false,
+                timer_revision: result.timerRevision,
+                timer_started_at: result.startedAt ?? startedAt,
+              }
+            : current,
+        );
+        setLatestTimerBlock({
+          block_index: 1,
+          created_at: result.startedAt ?? startedAt,
+          duration_seconds: result.durationSeconds ?? TIMER_DURATION_SECONDS,
+          ended_at: null,
+          id: blockId,
+          kind: "initial",
+          session_id: sessionRow.id,
+          started_at: result.startedAt ?? startedAt,
+        });
+      } catch (error) {
+        setStatusMessage(toDisplayError(error, "Unable to start the timer."));
+      }
+    });
   }
 
   function resetSessionFlow(summaryMessage: string, feedback?: SessionRow["feedback"]) {
@@ -766,49 +743,46 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
       return;
     }
 
-    const endedAt = new Date().toISOString();
-    const expectedRevision = timer.state.timerRevision ?? sessionRow.timer_revision;
+    await runTimerAction(async () => {
+      const endedAt = new Date().toISOString();
+      const expectedRevision = timer.state.timerRevision ?? sessionRow.timer_revision;
 
-    setIsSubmittingTimerAction(true);
-    setStatusMessage(null);
+      try {
+        await stopTimer();
+        await stopTimerBlock({
+          blockId: latestTimerBlock.id,
+          endedAt,
+          expectedRevision,
+        }).catch((error) => {
+          if (import.meta.env.DEV) {
+            console.warn("[session] durable timer stop will replay later:", error);
+          }
 
-    try {
-      await stopTimer();
-      await stopTimerBlock({
-        blockId: latestTimerBlock.id,
-        endedAt,
-        expectedRevision,
-      }).catch((error) => {
-        if (import.meta.env.DEV) {
-          console.warn("[session] durable timer stop will replay later:", error);
-        }
+          throw error;
+        });
 
-        throw error;
-      });
+        const pending = await getPendingSyncs();
+        await clearPendingSyncs(
+          pending
+            .filter(
+              (sync) =>
+                sync.kind === "stop_block" &&
+                sync.sessionId === sessionRow.id &&
+                sync.blockId === latestTimerBlock.id,
+            )
+            .map((sync) => sync.id),
+        );
 
-      const pending = await getPendingSyncs();
-      await clearPendingSyncs(
-        pending
-          .filter(
-            (sync) =>
-              sync.kind === "stop_block" &&
-              sync.sessionId === sessionRow.id &&
-              sync.blockId === latestTimerBlock.id,
-          )
-          .map((sync) => sync.id),
-      );
-
-      resetSessionFlow("Session stopped. Start another round when you're ready.");
-    } catch (error) {
-      resetSessionFlow(
-        toDisplayError(
-          error,
-          LOCAL_STOP_PENDING_MESSAGE,
-        ),
-      );
-    } finally {
-      setIsSubmittingTimerAction(false);
-    }
+        resetSessionFlow("Session stopped. Start another round when you're ready.");
+      } catch (error) {
+        resetSessionFlow(
+          toDisplayError(
+            error,
+            LOCAL_STOP_PENDING_MESSAGE,
+          ),
+        );
+      }
+    });
   }
 
   async function handleCheckIn(feedback: NonNullable<SessionRow["feedback"]>) {
@@ -816,33 +790,38 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
       return;
     }
 
-    setIsSubmittingTimerAction(true);
-    setStatusMessage(null);
+    await runTimerAction(async () => {
+      try {
+        const checkinState = await ensureTimerCheckinDurable({
+          durationSecs: latestTimerBlock?.duration_seconds ?? TIMER_DURATION_SECONDS,
+          extended: sessionRow.timer_extended ?? false,
+          fallbackEndedAt: latestTimerBlock?.ended_at ?? sessionRow.timer_ended_at,
+          fallbackRevision: sessionRow.timer_revision,
+          latestBlockId: latestTimerBlock?.id ?? null,
+          sessionId: sessionRow.id,
+        });
+        const checkedInAt = new Date().toISOString();
 
-    try {
-      const checkinState = await ensureCheckinDurable(sessionRow);
-      const checkedInAt = new Date().toISOString();
+        applyDurableCheckinState(checkinState);
+        await checkInTimerSession({
+          checkedInAt,
+          expectedRevision: checkinState.timerRevision,
+          feedback,
+          sessionId: sessionRow.id,
+        });
 
-      await checkInTimerSession({
-        checkedInAt,
-        expectedRevision: checkinState.timerRevision,
-        feedback,
-        sessionId: sessionRow.id,
-      });
+        await resolveCheckin();
+        await clearPendingSyncs(
+          (await getPendingSyncs())
+            .filter((sync) => sync.sessionId === sessionRow.id)
+            .map((sync) => sync.id),
+        );
 
-      await resolveCheckin();
-      await clearPendingSyncs(
-        (await getPendingSyncs())
-          .filter((sync) => sync.sessionId === sessionRow.id)
-          .map((sync) => sync.id),
-      );
-
-      resetSessionFlow(checkInSummary(feedback), feedback);
-    } catch (error) {
-      setStatusMessage(toDisplayError(error, "Unable to save your check-in."));
-    } finally {
-      setIsSubmittingTimerAction(false);
-    }
+        resetSessionFlow(checkInSummary(feedback), feedback);
+      } catch (error) {
+        setStatusMessage(toDisplayError(error, "Unable to save your check-in."));
+      }
+    });
   }
 
   async function handleExtendTimer() {
@@ -850,83 +829,88 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
       return;
     }
 
-    setIsSubmittingTimerAction(true);
-    setStatusMessage(null);
-
-    const startedAt = new Date().toISOString();
-
-    try {
-      const checkinState = await ensureCheckinDurable(sessionRow);
-      const result = await startExtensionBlock({
-        durationSeconds: TIMER_DURATION_SECONDS,
-        expectedRevision: checkinState.timerRevision,
-        sessionId: sessionRow.id,
-        startedAt,
-      });
-      const blockId = requireBlockId(
-        result.blockId,
-        "Timer extension did not return a block id.",
-      );
+    await runTimerAction(async () => {
+      const startedAt = new Date().toISOString();
 
       try {
-        await extendTimer({
-          blockId,
-          durationSecs: result.durationSeconds ?? TIMER_DURATION_SECONDS,
+        const checkinState = await ensureTimerCheckinDurable({
+          durationSecs: latestTimerBlock?.duration_seconds ?? TIMER_DURATION_SECONDS,
+          extended: sessionRow.timer_extended ?? false,
+          fallbackEndedAt: latestTimerBlock?.ended_at ?? sessionRow.timer_ended_at,
+          fallbackRevision: sessionRow.timer_revision,
+          latestBlockId: latestTimerBlock?.id ?? null,
           sessionId: sessionRow.id,
-          startedAt: result.startedAt ?? startedAt,
-          timerRevision: result.timerRevision,
         });
-      } catch (error) {
-        const revertResult = await revertExtensionStart({
-          expectedRevision: result.timerRevision,
+        applyDurableCheckinState(checkinState);
+        const result = await startExtensionBlock({
+          durationSeconds: TIMER_DURATION_SECONDS,
+          expectedRevision: checkinState.timerRevision,
           sessionId: sessionRow.id,
-        }).catch(() => null);
+          startedAt,
+        });
+        const blockId = requireBlockId(
+          result.blockId,
+          "Timer extension did not return a block id.",
+        );
 
-        if (revertResult) {
-          setSessionRow((current) =>
-            current
-              ? {
-                  ...current,
-                  timer_duration_seconds: TIMER_DURATION_SECONDS,
-                  timer_ended_at: checkinState.endedAt ?? current.timer_ended_at,
-                  timer_extended: false,
-                  timer_revision: revertResult.timerRevision,
-                }
-              : current,
-          );
+        try {
+          await extendTimer({
+            blockId,
+            durationSecs: result.durationSeconds ?? TIMER_DURATION_SECONDS,
+            sessionId: sessionRow.id,
+            startedAt: result.startedAt ?? startedAt,
+            timerRevision: result.timerRevision,
+          });
+        } catch (error) {
+          const revertResult = await revertExtensionStart({
+            expectedRevision: result.timerRevision,
+            sessionId: sessionRow.id,
+          }).catch(() => null);
+
+          if (revertResult) {
+            setSessionRow((current) =>
+              current
+                ? {
+                    ...current,
+                    timer_duration_seconds: TIMER_DURATION_SECONDS,
+                    timer_ended_at: checkinState.endedAt ?? current.timer_ended_at,
+                    timer_extended: false,
+                    timer_revision: revertResult.timerRevision,
+                  }
+                : current,
+            );
+          }
+
+          throw error;
         }
 
-        throw error;
+        setSessionRow((current) =>
+          current
+            ? {
+                ...current,
+                timer_duration_seconds:
+                  (current.timer_duration_seconds ?? TIMER_DURATION_SECONDS) +
+                  TIMER_DURATION_SECONDS,
+                timer_ended_at: null,
+                timer_extended: true,
+                timer_revision: result.timerRevision,
+              }
+            : current,
+        );
+        setLatestTimerBlock({
+          block_index: (latestTimerBlock?.block_index ?? 1) + 1,
+          created_at: result.startedAt ?? startedAt,
+          duration_seconds: result.durationSeconds ?? TIMER_DURATION_SECONDS,
+          ended_at: null,
+          id: blockId,
+          kind: "extension",
+          session_id: sessionRow.id,
+          started_at: result.startedAt ?? startedAt,
+        });
+      } catch (error) {
+        setStatusMessage(toDisplayError(error, "Unable to extend the timer."));
       }
-
-      setSessionRow((current) =>
-        current
-          ? {
-              ...current,
-              timer_duration_seconds:
-                (current.timer_duration_seconds ?? TIMER_DURATION_SECONDS) +
-                TIMER_DURATION_SECONDS,
-              timer_ended_at: null,
-              timer_extended: true,
-              timer_revision: result.timerRevision,
-            }
-          : current,
-      );
-      setLatestTimerBlock({
-        block_index: (latestTimerBlock?.block_index ?? 1) + 1,
-        created_at: result.startedAt ?? startedAt,
-        duration_seconds: result.durationSeconds ?? TIMER_DURATION_SECONDS,
-        ended_at: null,
-        id: blockId,
-        kind: "extension",
-        session_id: sessionRow.id,
-        started_at: result.startedAt ?? startedAt,
-      });
-    } catch (error) {
-      setStatusMessage(toDisplayError(error, "Unable to extend the timer."));
-    } finally {
-      setIsSubmittingTimerAction(false);
-    }
+    });
   }
 
   async function commitStructuredResult(

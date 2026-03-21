@@ -1,19 +1,25 @@
 import { act, render, waitFor } from "@testing-library/react";
-import { TimerProvider } from "./useTimer";
+import { TimerProvider, useTimer } from "./useTimer";
 
 const {
+  completeTimerBlockMock,
+  expireTimerCheckinMock,
   invokeMock,
   isTauriMock,
   listenMock,
   loadActiveTimerSessionMock,
   loadLatestTimerBlockMock,
+  stopTimerBlockMock,
   useAuthMock,
 } = vi.hoisted(() => ({
+  completeTimerBlockMock: vi.fn(),
+  expireTimerCheckinMock: vi.fn(),
   invokeMock: vi.fn(),
   isTauriMock: vi.fn(),
   listenMock: vi.fn(),
   loadActiveTimerSessionMock: vi.fn(),
   loadLatestTimerBlockMock: vi.fn(),
+  stopTimerBlockMock: vi.fn(),
   useAuthMock: vi.fn(),
 }));
 
@@ -31,11 +37,11 @@ vi.mock("./useAuth", () => ({
 }));
 
 vi.mock("../lib/session-records", () => ({
-  completeTimerBlock: vi.fn(),
-  expireTimerCheckin: vi.fn(),
+  completeTimerBlock: (...args: unknown[]) => completeTimerBlockMock(...args),
+  expireTimerCheckin: (...args: unknown[]) => expireTimerCheckinMock(...args),
   loadActiveTimerSession: (...args: unknown[]) => loadActiveTimerSessionMock(...args),
   loadLatestTimerBlock: (...args: unknown[]) => loadLatestTimerBlockMock(...args),
-  stopTimerBlock: vi.fn(),
+  stopTimerBlock: (...args: unknown[]) => stopTimerBlockMock(...args),
 }));
 
 function createDeferred<T>() {
@@ -72,14 +78,19 @@ type TimerStatePayload = {
 
 describe("TimerProvider", () => {
   let timerStateChangedHandler: ((event: { payload: TimerStatePayload }) => void) | null;
+  let latestTimer: ReturnType<typeof useTimer> | null;
 
   beforeEach(() => {
+    latestTimer = null;
     timerStateChangedHandler = null;
+    completeTimerBlockMock.mockReset();
+    expireTimerCheckinMock.mockReset();
     invokeMock.mockReset();
     isTauriMock.mockReset();
     listenMock.mockReset();
     loadActiveTimerSessionMock.mockReset();
     loadLatestTimerBlockMock.mockReset();
+    stopTimerBlockMock.mockReset();
     useAuthMock.mockReset();
 
     isTauriMock.mockReturnValue(true);
@@ -184,6 +195,134 @@ describe("TimerProvider", () => {
       expect(invokeMock).toHaveBeenCalledWith("clear_pending_timer_syncs", {
         syncIds: ["sync-2"],
       });
+    });
+  });
+
+  it("reuses the pending-sync serialization path for check-in durability", async () => {
+    const completionDeferred = createDeferred<{
+      endedAt: string;
+      sessionId: string;
+      status: "ok";
+      timerRevision: number;
+    }>();
+    const pendingSync = {
+      blockId: "block-1",
+      expectedRevision: 1,
+      id: "sync-1",
+      kind: "complete_block" as const,
+      occurredAt: "2026-03-21T10:25:00.000Z",
+      sessionId: "session-1",
+    };
+    let latestBlock = {
+      duration_seconds: 1500,
+      ended_at: null as string | null,
+      id: "block-1",
+    };
+    let pendingSyncs = [pendingSync];
+    let currentTimerState: TimerStatePayload = {
+      currentBlockId: "block-1",
+      durationSecs: 1500,
+      extended: false,
+      remainingSecs: null,
+      sessionId: "session-1",
+      status: "running",
+      timerRevision: 1,
+    };
+
+    function TimerConsumer() {
+      latestTimer = useTimer();
+      return null;
+    }
+
+    invokeMock.mockImplementation((command: string, args?: { syncIds?: string[] }) => {
+      switch (command) {
+        case "get_pending_timer_syncs":
+          return Promise.resolve([...pendingSyncs]);
+        case "get_timer_state":
+          return Promise.resolve(currentTimerState);
+        case "clear_pending_timer_syncs":
+          pendingSyncs = pendingSyncs.filter(
+            (sync) => !args?.syncIds?.includes(sync.id),
+          );
+          return Promise.resolve(undefined);
+        case "hydrate_awaiting_checkin":
+          currentTimerState = {
+            currentBlockId: "block-1",
+            durationSecs: 1500,
+            extended: false,
+            remainingSecs: null,
+            sessionId: "session-1",
+            status: "awaiting_checkin",
+            timerRevision: 2,
+          };
+          return Promise.resolve(currentTimerState);
+        case "clear_timer_state":
+          currentTimerState = idleTimerState;
+          return Promise.resolve(currentTimerState);
+        default:
+          return Promise.resolve(currentTimerState);
+      }
+    });
+    loadActiveTimerSessionMock.mockResolvedValue({
+      checked_in_at: null,
+      status: "active",
+      timer_extended: false,
+      timer_revision: 1,
+      id: "session-1",
+    });
+    loadLatestTimerBlockMock.mockImplementation(() => Promise.resolve({ ...latestBlock }));
+    completeTimerBlockMock.mockImplementation(async () => {
+      const result = await completionDeferred.promise;
+      latestBlock = {
+        ...latestBlock,
+        ended_at: result.endedAt,
+      };
+      return result;
+    });
+
+    render(
+      <TimerProvider>
+        <TimerConsumer />
+      </TimerProvider>,
+    );
+
+    await waitFor(() => {
+      expect(completeTimerBlockMock).toHaveBeenCalledTimes(1);
+      expect(latestTimer).not.toBeNull();
+    });
+
+    let ensurePromise!: Promise<{ endedAt: string | null; timerRevision: number }>;
+
+    act(() => {
+      ensurePromise = latestTimer!.ensureCheckinDurable({
+        durationSecs: 1500,
+        extended: false,
+        fallbackEndedAt: null,
+        fallbackRevision: 1,
+        latestBlockId: "block-1",
+        sessionId: "session-1",
+      });
+    });
+
+    expect(completeTimerBlockMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      completionDeferred.resolve({
+        endedAt: pendingSync.occurredAt,
+        sessionId: "session-1",
+        status: "ok",
+        timerRevision: 2,
+      });
+      await ensurePromise;
+    });
+
+    await expect(ensurePromise).resolves.toEqual({
+      endedAt: pendingSync.occurredAt,
+      timerRevision: 2,
+    });
+    expect(completeTimerBlockMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledWith("clear_pending_timer_syncs", {
+      syncIds: ["sync-1"],
     });
   });
 });
