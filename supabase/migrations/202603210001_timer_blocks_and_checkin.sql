@@ -567,7 +567,8 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.revert_timer_start(
-  input_session_id UUID
+  input_session_id UUID,
+  input_expected_revision INTEGER
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -577,6 +578,7 @@ AS $$
 DECLARE
   request_user_id UUID := (SELECT auth.uid());
   session_row public.sessions%ROWTYPE;
+  initial_block public.session_timer_blocks%ROWTYPE;
   next_revision INTEGER;
 BEGIN
   IF request_user_id IS NULL THEN
@@ -594,9 +596,46 @@ BEGIN
     RAISE EXCEPTION 'Timer session not found.';
   END IF;
 
-  DELETE FROM public.session_timer_blocks
+  IF session_row.timer_revision <> input_expected_revision THEN
+    RAISE EXCEPTION 'Timer revision mismatch.';
+  END IF;
+
+  IF
+    session_row.checked_in_at IS NOT NULL
+    OR session_row.status <> 'active'
+    OR session_row.timer_started_at IS NULL
+    OR session_row.timer_ended_at IS NOT NULL
+    OR COALESCE(session_row.timer_extended, FALSE)
+  THEN
+    RAISE EXCEPTION 'Timer start revert requires the session to still be in its just-started state.';
+  END IF;
+
+  SELECT *
+  INTO initial_block
+  FROM public.session_timer_blocks
   WHERE session_id = input_session_id
-    AND kind = 'initial';
+  ORDER BY block_index DESC, created_at DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF NOT FOUND
+     OR initial_block.kind <> 'initial'
+     OR initial_block.ended_at IS NOT NULL
+  THEN
+    RAISE EXCEPTION 'Timer start revert requires exactly one open initial timer block.';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.session_timer_blocks
+    WHERE session_id = input_session_id
+      AND id <> initial_block.id
+  ) THEN
+    RAISE EXCEPTION 'Timer start revert only supports the initial timer block.';
+  END IF;
+
+  DELETE FROM public.session_timer_blocks
+  WHERE id = initial_block.id;
 
   UPDATE public.sessions
   SET
@@ -619,7 +658,8 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.revert_extension_start(
-  input_session_id UUID
+  input_session_id UUID,
+  input_expected_revision INTEGER
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -645,6 +685,10 @@ BEGIN
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Timer session not found.';
+  END IF;
+
+  IF session_row.timer_revision <> input_expected_revision THEN
+    RAISE EXCEPTION 'Timer revision mismatch.';
   END IF;
 
   DELETE FROM public.session_timer_blocks
@@ -681,8 +725,8 @@ REVOKE ALL ON FUNCTION public.start_extension_block(UUID, INTEGER, TIMESTAMPTZ, 
 REVOKE ALL ON FUNCTION public.stop_timer_block(UUID, INTEGER, TIMESTAMPTZ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.check_in_timer_session(UUID, INTEGER, TIMESTAMPTZ, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.expire_timer_checkin(UUID, INTEGER, TIMESTAMPTZ) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.revert_timer_start(UUID) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.revert_extension_start(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.revert_timer_start(UUID, INTEGER) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.revert_extension_start(UUID, INTEGER) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.start_timer_block(UUID, INTEGER, TIMESTAMPTZ, INTEGER) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.complete_timer_block(UUID, INTEGER, TIMESTAMPTZ) TO authenticated;
@@ -690,5 +734,5 @@ GRANT EXECUTE ON FUNCTION public.start_extension_block(UUID, INTEGER, TIMESTAMPT
 GRANT EXECUTE ON FUNCTION public.stop_timer_block(UUID, INTEGER, TIMESTAMPTZ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_in_timer_session(UUID, INTEGER, TIMESTAMPTZ, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.expire_timer_checkin(UUID, INTEGER, TIMESTAMPTZ) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.revert_timer_start(UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.revert_extension_start(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.revert_timer_start(UUID, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.revert_extension_start(UUID, INTEGER) TO authenticated;

@@ -272,12 +272,14 @@ export type Database = {
       };
       revert_extension_start: {
         Args: {
+          input_expected_revision: number;
           input_session_id: string;
         };
         Returns: Json;
       };
       revert_timer_start: {
         Args: {
+          input_expected_revision: number;
           input_session_id: string;
         };
         Returns: Json;

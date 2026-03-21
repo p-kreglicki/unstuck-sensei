@@ -1,27 +1,43 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { useSessionFlow } from "./useSessionFlow";
-import type { SessionRow } from "../lib/session-records";
+import type { SessionRow, SessionTimerBlockRow } from "../lib/session-records";
 
 const {
+  checkInTimerSessionMock,
+  completeTimerBlockMock,
   createSessionDraftMock,
+  expireTimerCheckinMock,
+  revertExtensionStartMock,
+  revertTimerStartMock,
   loadActiveTimerSessionMock,
   loadLatestTimerBlockMock,
   insertConversationMessageMock,
   loadActiveSessionDraftMock,
   loadConversationMessagesMock,
   loadRecentSessionSummariesMock,
+  startExtensionBlockMock,
+  startTimerBlockMock,
+  stopTimerBlockMock,
   useTimerMock,
   updateSessionDraftMock,
   useAuthMock,
   useChatMock,
 } = vi.hoisted(() => ({
+  checkInTimerSessionMock: vi.fn(),
+  completeTimerBlockMock: vi.fn(),
   createSessionDraftMock: vi.fn(),
+  expireTimerCheckinMock: vi.fn(),
+  revertExtensionStartMock: vi.fn(),
+  revertTimerStartMock: vi.fn(),
   loadActiveTimerSessionMock: vi.fn(),
   loadLatestTimerBlockMock: vi.fn(),
   insertConversationMessageMock: vi.fn(),
   loadActiveSessionDraftMock: vi.fn(),
   loadConversationMessagesMock: vi.fn(),
   loadRecentSessionSummariesMock: vi.fn(),
+  startExtensionBlockMock: vi.fn(),
+  startTimerBlockMock: vi.fn(),
+  stopTimerBlockMock: vi.fn(),
   useTimerMock: vi.fn(),
   updateSessionDraftMock: vi.fn(),
   useAuthMock: vi.fn(),
@@ -41,10 +57,10 @@ vi.mock("./useTimer", () => ({
 }));
 
 vi.mock("../lib/session-records", () => ({
-  checkInTimerSession: vi.fn(),
-  completeTimerBlock: vi.fn(),
+  checkInTimerSession: (...args: unknown[]) => checkInTimerSessionMock(...args),
+  completeTimerBlock: (...args: unknown[]) => completeTimerBlockMock(...args),
   createSessionDraft: (...args: unknown[]) => createSessionDraftMock(...args),
-  expireTimerCheckin: vi.fn(),
+  expireTimerCheckin: (...args: unknown[]) => expireTimerCheckinMock(...args),
   insertConversationMessage: (...args: unknown[]) =>
     insertConversationMessageMock(...args),
   loadActiveSessionDraft: (...args: unknown[]) => loadActiveSessionDraftMock(...args),
@@ -56,11 +72,11 @@ vi.mock("../lib/session-records", () => ({
     loadRecentSessionSummariesMock(...args),
   readSessionSteps: (session: { steps?: unknown } | null) =>
     Array.isArray(session?.steps) ? session.steps : [],
-  revertExtensionStart: vi.fn(),
-  revertTimerStart: vi.fn(),
-  startExtensionBlock: vi.fn(),
-  startTimerBlock: vi.fn(),
-  stopTimerBlock: vi.fn(),
+  revertExtensionStart: (...args: unknown[]) => revertExtensionStartMock(...args),
+  revertTimerStart: (...args: unknown[]) => revertTimerStartMock(...args),
+  startExtensionBlock: (...args: unknown[]) => startExtensionBlockMock(...args),
+  startTimerBlock: (...args: unknown[]) => startTimerBlockMock(...args),
+  stopTimerBlock: (...args: unknown[]) => stopTimerBlockMock(...args),
   updateSessionDraft: (...args: unknown[]) => updateSessionDraftMock(...args),
 }));
 
@@ -106,6 +122,22 @@ function createChatState() {
     isStreaming: false,
     streamingText: "",
     structuredResult: null,
+  };
+}
+
+function createTimerBlockRow(
+  overrides: Partial<SessionTimerBlockRow> = {},
+): SessionTimerBlockRow {
+  return {
+    block_index: 1,
+    created_at: "2026-03-17T10:10:00.000Z",
+    duration_seconds: 1500,
+    ended_at: null,
+    id: "block-1",
+    kind: "initial",
+    session_id: "session-1",
+    started_at: "2026-03-17T10:10:00.000Z",
+    ...overrides,
   };
 }
 
@@ -414,5 +446,238 @@ describe("useSessionFlow", () => {
       updateDeferred.resolve(finalSession);
       await work;
     });
+  });
+
+  it("reverts timer start with the durable post-start revision when local start fails", async () => {
+    const activeSession = createSessionRow();
+    const startTimerMock = vi.fn().mockRejectedValue(new Error("rust start failed"));
+
+    useTimerMock.mockReturnValue({
+      clearPendingSyncs: vi.fn(),
+      clearRuntime: vi.fn().mockResolvedValue({
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "idle",
+        timerRevision: null,
+      }),
+      extendTimer: vi.fn(),
+      getPendingSyncs: vi.fn().mockResolvedValue([]),
+      hydrateAwaitingCheckin: vi.fn(),
+      hydrateRunning: vi.fn(),
+      refreshStatus: vi.fn().mockResolvedValue({
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "idle",
+        timerRevision: null,
+      }),
+      resolveCheckin: vi.fn(),
+      startTimer: startTimerMock,
+      state: {
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "idle",
+        timerRevision: null,
+      },
+      stopTimer: vi.fn(),
+    });
+    loadActiveSessionDraftMock.mockResolvedValue(activeSession);
+    startTimerBlockMock.mockResolvedValue({
+      blockId: "block-1",
+      durationSeconds: 1500,
+      sessionId: "session-1",
+      startedAt: "2026-03-17T10:10:00.000Z",
+      status: "ok",
+      timerRevision: 1,
+    });
+    revertTimerStartMock.mockResolvedValue({
+      sessionId: "session-1",
+      status: "ok",
+      timerRevision: 2,
+    });
+
+    const { result } = renderHook(() => useSessionFlow({ locationState: null }));
+
+    await waitFor(() => {
+      expect(result.current.isBooting).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.handleConfirm();
+    });
+
+    expect(revertTimerStartMock).toHaveBeenCalledWith({
+      expectedRevision: 1,
+      sessionId: "session-1",
+    });
+    expect(result.current.sessionRow?.timer_revision).toBe(2);
+    expect(result.current.sessionRow?.timer_started_at).toBeNull();
+  });
+
+  it("reverts extension start with the durable post-extension revision when local extend fails", async () => {
+    const activeTimerSession = createSessionRow({
+      timer_duration_seconds: 1500,
+      timer_ended_at: "2026-03-17T10:35:00.000Z",
+      timer_extended: false,
+      timer_revision: 5,
+      timer_started_at: "2026-03-17T10:10:00.000Z",
+    });
+    const extendTimerMock = vi.fn().mockRejectedValue(new Error("rust extend failed"));
+
+    useTimerMock.mockReturnValue({
+      clearPendingSyncs: vi.fn(),
+      clearRuntime: vi.fn().mockResolvedValue({
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "idle",
+        timerRevision: null,
+      }),
+      extendTimer: extendTimerMock,
+      getPendingSyncs: vi.fn().mockResolvedValue([]),
+      hydrateAwaitingCheckin: vi.fn(),
+      hydrateRunning: vi.fn(),
+      refreshStatus: vi.fn().mockResolvedValue({
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "awaiting_checkin",
+        timerRevision: 5,
+      }),
+      resolveCheckin: vi.fn(),
+      startTimer: vi.fn(),
+      state: {
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "awaiting_checkin",
+        timerRevision: 5,
+      },
+      stopTimer: vi.fn(),
+    });
+    loadActiveTimerSessionMock.mockResolvedValue(activeTimerSession);
+    loadLatestTimerBlockMock.mockResolvedValue(
+      createTimerBlockRow({
+        ended_at: "2026-03-17T10:35:00.000Z",
+      }),
+    );
+    startExtensionBlockMock.mockResolvedValue({
+      blockId: "block-2",
+      durationSeconds: 1500,
+      sessionId: "session-1",
+      startedAt: "2026-03-17T10:35:01.000Z",
+      status: "ok",
+      timerRevision: 6,
+    });
+    revertExtensionStartMock.mockResolvedValue({
+      sessionId: "session-1",
+      status: "ok",
+      timerRevision: 7,
+    });
+
+    const { result } = renderHook(() => useSessionFlow({ locationState: null }));
+
+    await waitFor(() => {
+      expect(result.current.isBooting).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.handleExtendTimer();
+    });
+
+    expect(revertExtensionStartMock).toHaveBeenCalledWith({
+      expectedRevision: 6,
+      sessionId: "session-1",
+    });
+    expect(result.current.sessionRow?.timer_revision).toBe(7);
+    expect(result.current.sessionRow?.timer_extended).toBe(false);
+  });
+
+  it("prefers a pending local stop over rehydrating a running timer on bootstrap", async () => {
+    const clearRuntimeMock = vi.fn().mockResolvedValue({
+      currentBlockId: null,
+      durationSecs: null,
+      extended: false,
+      remainingSecs: null,
+      sessionId: null,
+      status: "idle",
+      timerRevision: null,
+    });
+    const hydrateRunningMock = vi.fn();
+
+    useTimerMock.mockReturnValue({
+      clearPendingSyncs: vi.fn(),
+      clearRuntime: clearRuntimeMock,
+      extendTimer: vi.fn(),
+      getPendingSyncs: vi.fn().mockResolvedValue([
+        {
+          blockId: "block-1",
+          expectedRevision: 4,
+          id: "sync-1",
+          kind: "stop_block",
+          occurredAt: "2026-03-17T10:20:00.000Z",
+          sessionId: "session-1",
+        },
+      ]),
+      hydrateAwaitingCheckin: vi.fn(),
+      hydrateRunning: hydrateRunningMock,
+      refreshStatus: vi.fn().mockResolvedValue({
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "idle",
+        timerRevision: null,
+      }),
+      resolveCheckin: vi.fn(),
+      startTimer: vi.fn(),
+      state: {
+        currentBlockId: null,
+        durationSecs: null,
+        extended: false,
+        remainingSecs: null,
+        sessionId: null,
+        status: "idle",
+        timerRevision: null,
+      },
+      stopTimer: vi.fn(),
+    });
+    loadActiveTimerSessionMock.mockResolvedValue(
+      createSessionRow({
+        timer_duration_seconds: 1500,
+        timer_revision: 4,
+        timer_started_at: "2026-03-17T10:10:00.000Z",
+      }),
+    );
+    loadLatestTimerBlockMock.mockResolvedValue(createTimerBlockRow());
+
+    const { result } = renderHook(() => useSessionFlow({ locationState: null }));
+
+    await waitFor(() => {
+      expect(result.current.isBooting).toBe(false);
+    });
+
+    expect(clearRuntimeMock).toHaveBeenCalled();
+    expect(hydrateRunningMock).not.toHaveBeenCalled();
+    expect(result.current.sessionRow).toBeNull();
+    expect(result.current.currentStage).toBe("compose");
+    expect(result.current.statusMessage).toBe(
+      "The timer stopped locally. I’ll keep trying to save that change.",
+    );
   });
 });

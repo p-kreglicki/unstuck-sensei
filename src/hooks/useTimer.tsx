@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -118,6 +119,8 @@ async function runTimerCommand(
 export function TimerProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [state, setState] = useState<TimerCommandState>(defaultTimerState);
+  const replayPendingSyncsInFlightRef = useRef<Promise<void> | null>(null);
+  const replayPendingSyncsQueuedRef = useRef(false);
 
   const refreshStatus = useCallback(async (): Promise<TimerCommandState> => {
     if (!isTauri()) {
@@ -257,7 +260,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const replayPendingSyncs = useCallback(async () => {
+  const replayPendingSyncsPass = useCallback(async () => {
     if (!isTauri() || !user?.id) {
       return;
     }
@@ -398,6 +401,27 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     refreshStatus,
     user?.id,
   ]);
+
+  const replayPendingSyncs = useCallback(async () => {
+    if (replayPendingSyncsInFlightRef.current) {
+      replayPendingSyncsQueuedRef.current = true;
+      return replayPendingSyncsInFlightRef.current;
+    }
+
+    const replayPromise = (async () => {
+      try {
+        do {
+          replayPendingSyncsQueuedRef.current = false;
+          await replayPendingSyncsPass();
+        } while (replayPendingSyncsQueuedRef.current);
+      } finally {
+        replayPendingSyncsInFlightRef.current = null;
+      }
+    })();
+
+    replayPendingSyncsInFlightRef.current = replayPromise;
+    return replayPromise;
+  }, [replayPendingSyncsPass]);
 
   useEffect(() => {
     if (!isTauri()) {

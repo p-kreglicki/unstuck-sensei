@@ -41,6 +41,8 @@ import { formatSessionReminder, moveStep } from "../lib/session-flow";
 
 const TIMER_DURATION_SECONDS = 25 * 60;
 const CHECKIN_GRACE_HOURS = 12;
+const LOCAL_STOP_PENDING_MESSAGE =
+  "The timer stopped locally. I’ll keep trying to save that change.";
 
 type SessionStage =
   | "clarifying"
@@ -194,8 +196,11 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
       setStatusMessage(null);
 
       try {
-        const rustTimerState = await refreshStatus();
-        const activeTimerSession = await loadActiveTimerSession(user.id);
+        const [rustTimerState, pendingSyncs, activeTimerSession] = await Promise.all([
+          refreshStatus(),
+          getPendingSyncs(),
+          loadActiveTimerSession(user.id),
+        ]);
         const activeDraftSession = activeTimerSession
           ? null
           : await loadActiveSessionDraft(user.id);
@@ -228,6 +233,49 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
               })
             : Promise.resolve(null),
         ]);
+
+        const pendingStopSync =
+          activeTimerSession && latestBlock && !latestBlock.ended_at
+            ? pendingSyncs.find(
+                (sync) =>
+                  sync.kind === "stop_block" &&
+                  sync.sessionId === activeTimerSession.id &&
+                  (sync.blockId === null || sync.blockId === latestBlock.id),
+              )
+            : null;
+
+        if (pendingStopSync) {
+          await clearRuntime();
+
+          const draftSession = await loadActiveSessionDraft(user.id);
+          const draftMessages = draftSession
+            ? await loadConversationMessages(draftSession.id).catch(() => [])
+            : [];
+
+          if (!active) {
+            return;
+          }
+
+          setRecentSessions(recent);
+          setSessionRow(draftSession);
+          setLatestTimerBlock(null);
+          setMessages(draftMessages);
+          setStatusMessage(LOCAL_STOP_PENDING_MESSAGE);
+          setStuckOnInput(
+            draftSession?.stuck_on ??
+              (requestedSource === "detection"
+                ? "I was bouncing between apps and avoiding "
+                : ""),
+          );
+          setEnergyLevel(
+            isEnergyLevel(draftSession?.energy_level)
+              ? draftSession.energy_level
+              : null,
+          );
+          setClarifyingAnswer(draftSession?.clarifying_answer ?? "");
+          setSteps(parseSessionSteps(draftSession?.steps));
+          return;
+        }
 
         if (!active) {
           return;
@@ -349,6 +397,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
   }, [
     requestedSource,
     clearRuntime,
+    getPendingSyncs,
     hydrateAwaitingCheckin,
     hydrateRunning,
     refreshStatus,
@@ -576,7 +625,10 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
           timerRevision: result.timerRevision,
         });
       } catch (error) {
-        const revertResult = await revertTimerStart(sessionRow.id).catch(() => null);
+        const revertResult = await revertTimerStart({
+          expectedRevision: result.timerRevision,
+          sessionId: sessionRow.id,
+        }).catch(() => null);
 
         if (revertResult) {
           setSessionRow((current) =>
@@ -751,7 +803,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
       resetSessionFlow(
         toDisplayError(
           error,
-          "The timer stopped locally. I’ll keep trying to save that change.",
+          LOCAL_STOP_PENDING_MESSAGE,
         ),
       );
     } finally {
@@ -825,7 +877,10 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
           timerRevision: result.timerRevision,
         });
       } catch (error) {
-        const revertResult = await revertExtensionStart(sessionRow.id).catch(() => null);
+        const revertResult = await revertExtensionStart({
+          expectedRevision: result.timerRevision,
+          sessionId: sessionRow.id,
+        }).catch(() => null);
 
         if (revertResult) {
           setSessionRow((current) =>

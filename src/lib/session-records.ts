@@ -357,21 +357,29 @@ export async function expireTimerCheckin(input: {
   );
 }
 
-export async function revertTimerStart(sessionId: string) {
+export async function revertTimerStart(input: {
+  expectedRevision: number;
+  sessionId: string;
+}) {
   return runTimerRpc(
     "revert_timer_start",
     {
-      input_session_id: sessionId,
+      input_expected_revision: input.expectedRevision,
+      input_session_id: input.sessionId,
     },
     "Timer start revert returned an invalid payload.",
   );
 }
 
-export async function revertExtensionStart(sessionId: string) {
+export async function revertExtensionStart(input: {
+  expectedRevision: number;
+  sessionId: string;
+}) {
   return runTimerRpc(
     "revert_extension_start",
     {
-      input_session_id: sessionId,
+      input_expected_revision: input.expectedRevision,
+      input_session_id: input.sessionId,
     },
     "Timer extension revert returned an invalid payload.",
   );
