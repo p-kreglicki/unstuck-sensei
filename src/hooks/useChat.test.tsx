@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { useChat } from "./useChat";
+import { toDisplayError } from "../lib/errors";
 import { encodeSseEvent } from "../../shared/session/chat-sse.js";
 
 function createStreamingResponse(frames: string[]) {
@@ -166,13 +167,20 @@ describe("useChat", () => {
       useChat({ accessToken: "token-123", sessionId: "session-4" }),
     );
 
-    await expect(
-      result.current.sendInitial({
+    let error: unknown;
+
+    try {
+      await result.current.sendInitial({
         energyLevel: "medium",
         source: "manual",
         stuckOn: "Trying the same thing again",
-      }),
-    ).rejects.toThrow("Rate limit reached.");
+      });
+    } catch (caughtError) {
+      error = caughtError;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect(toDisplayError(error, "fallback")).toBe("Rate limit reached.");
 
     await waitFor(() => {
       expect(result.current.state.error).toBe("Rate limit reached.");

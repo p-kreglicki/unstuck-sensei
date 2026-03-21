@@ -1,4 +1,4 @@
-import { toDisplayError } from "./errors";
+import { createDisplayError, toDisplayError } from "./errors";
 
 describe("toDisplayError", () => {
   it("sanitizes missing relation errors", () => {
@@ -27,6 +27,10 @@ describe("toDisplayError", () => {
     expect(toDisplayError({}, "fallback")).toBe("fallback");
   });
 
+  it("returns the message when it matches the fallback", () => {
+    expect(toDisplayError({ message: "fallback" }, "fallback")).toBe("fallback");
+  });
+
   it("falls back for unrecognized database errors", () => {
     expect(
       toDisplayError(
@@ -51,21 +55,12 @@ describe("toDisplayError", () => {
     ).toBe("fallback");
   });
 
-  it("preserves allowlisted app messages", () => {
+  it("preserves displayable app messages", () => {
     expect(
       toDisplayError(
-        { message: "Your session expired. Sign in again to continue." },
+        createDisplayError("Your session expired. Sign in again to continue."),
         "fallback",
       ),
     ).toBe("Your session expired. Sign in again to continue.");
-  });
-
-  it("preserves allowlisted app message patterns", () => {
-    expect(
-      toDisplayError(
-        { message: "The coaching request failed with status 429." },
-        "fallback",
-      ),
-    ).toBe("The coaching request failed with status 429.");
   });
 });

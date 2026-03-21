@@ -1,26 +1,16 @@
 const DATABASE_SETUP_MESSAGE =
   "Database setup is incomplete. Run the Supabase migrations for this project and retry.";
+const DISPLAYABLE_ERROR_FLAG = "displayable";
 
-const SAFE_DISPLAY_ERROR_MESSAGES = new Set([
-  "Rate limit reached. Take a breath, then try again soon.",
-  "Save the task first, then try again.",
-  "The coaching request could not be completed right now.",
-  "The coaching request failed.",
-  "The coaching request was canceled.",
-  "The coaching service is busy right now. Try again soon.",
-  "The coaching service is temporarily unavailable. Try again soon.",
-  "The coaching stream ended before a result was returned.",
-  "The coaching stream failed unexpectedly.",
-  "The coaching stream failed.",
-  "The server returned an invalid coaching result.",
-  "Unauthorized. Sign in again and retry.",
-  "Unable to start the chat right now.",
-  "Your session expired. Sign in again to continue.",
-]);
+type DisplayableError = Error & {
+  displayable: true;
+};
 
-const SAFE_DISPLAY_ERROR_PATTERNS = [
-  /^The coaching request failed with status \d+\.$/,
-];
+export function createDisplayError(message: string): DisplayableError {
+  return Object.assign(new Error(message), {
+    [DISPLAYABLE_ERROR_FLAG]: true as const,
+  });
+}
 
 export function toDisplayError(error: unknown, fallbackMessage: string) {
   const message = readErrorMessage(error);
@@ -36,7 +26,7 @@ export function toDisplayError(error: unknown, fallbackMessage: string) {
     return DATABASE_SETUP_MESSAGE;
   }
 
-  if (message === fallbackMessage || isSafeDisplayMessage(message)) {
+  if (message === fallbackMessage || isDisplayError(error)) {
     return message;
   }
 
@@ -65,9 +55,10 @@ function readErrorMessage(error: unknown) {
   return null;
 }
 
-function isSafeDisplayMessage(message: string) {
+function isDisplayError(error: unknown): error is DisplayableError {
   return (
-    SAFE_DISPLAY_ERROR_MESSAGES.has(message) ||
-    SAFE_DISPLAY_ERROR_PATTERNS.some((pattern) => pattern.test(message))
+    error instanceof Error &&
+    DISPLAYABLE_ERROR_FLAG in error &&
+    error.displayable === true
   );
 }
