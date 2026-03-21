@@ -12,6 +12,19 @@ const navItems = [
   { label: "Settings", to: "/settings" },
 ];
 
+const debugActions: Array<{ command: DebugCommand; label: string }> = [
+  { command: "get_detection_status", label: "Get status" },
+  { command: "get_detection_debug", label: "Get debug" },
+  { command: "pause_detection", label: "Pause" },
+  { command: "resume_detection", label: "Resume" },
+  { command: "dismiss_nudge", label: "Dismiss nudge" },
+];
+
+const interactivePanelClassName =
+  "rounded-[18px] border border-white/10 bg-white/5 px-4 py-3";
+const debugActionClassName =
+  "rounded-[18px] border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60";
+
 type DetectionDebug = {
   appSwitchCount: number;
   idleSeconds: number;
@@ -90,55 +103,26 @@ function DetectionDebugPanel() {
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <button
-          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isRunning}
-          onClick={() => void runCommand("get_detection_status")}
-          type="button"
-        >
-          Get status
-        </button>
-        <button
-          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isRunning}
-          onClick={() => void runCommand("get_detection_debug")}
-          type="button"
-        >
-          Get debug
-        </button>
-        <button
-          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isRunning}
-          onClick={() => void runCommand("pause_detection")}
-          type="button"
-        >
-          Pause
-        </button>
-        <button
-          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isRunning}
-          onClick={() => void runCommand("resume_detection")}
-          type="button"
-        >
-          Resume
-        </button>
-        <button
-          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isRunning}
-          onClick={() => void runCommand("dismiss_nudge")}
-          type="button"
-        >
-          Dismiss nudge
-        </button>
+        {debugActions.map((action) => (
+          <button
+            key={action.command}
+            className={debugActionClassName}
+            disabled={isRunning}
+            onClick={() => void runCommand(action.command)}
+            type="button"
+          >
+            {action.label}
+          </button>
+        ))}
       </div>
 
       {error ? (
-        <p className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+        <p className="mt-4 rounded-[18px] border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
           {error}
         </p>
       ) : null}
 
-      <pre className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-xs leading-6 text-slate-200">
+      <pre className="mt-4 overflow-x-auto rounded-[18px] border border-white/10 bg-slate-950/70 px-4 py-3 text-xs leading-6 text-slate-200">
         {result ? JSON.stringify(result, null, 2) : "Run a command to inspect detection state."}
       </pre>
     </section>
@@ -191,7 +175,7 @@ export function Layout() {
           </button>
         </div>
 
-        <nav className="mt-6 grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-white/5 p-1">
+        <nav className="mt-6 grid grid-cols-3 gap-2 rounded-[18px] border border-white/10 bg-white/5 p-1">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -211,7 +195,7 @@ export function Layout() {
           ))}
         </nav>
 
-        <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+        <div className={`mt-6 flex items-center justify-between text-sm text-slate-300 ${interactivePanelClassName}`}>
           <span className="truncate">{user?.email ?? "Not signed in"}</span>
           <span className="rounded-full bg-emerald-400/15 px-2.5 py-1 text-xs font-medium text-emerald-300">
             {detectionStatusLabels[state.status]}
@@ -219,7 +203,7 @@ export function Layout() {
         </div>
 
         {statusMessage ? (
-          <p className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+          <p className="mt-4 rounded-[18px] border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
             {statusMessage}
           </p>
         ) : null}
