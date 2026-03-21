@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { parseSseFrames } from "../../shared/session/chat-sse.js";
+import { createDisplayError } from "../lib/errors";
 import {
   isStructuredChatResponse,
   type ChatRequestMode,
@@ -103,7 +104,7 @@ export function useChat({ accessToken, sessionId }: UseChatOptions) {
     }
 
     if (!accessToken) {
-      throw new Error("Your session expired. Sign in again to continue.");
+      throw createDisplayError("Your session expired. Sign in again to continue.");
     }
 
     const controller = new AbortController();
@@ -143,7 +144,7 @@ export function useChat({ accessToken, sessionId }: UseChatOptions) {
 
       if (!response.ok || !response.body) {
         const errorMessage = await readChatError(response);
-        throw new Error(errorMessage);
+        throw createDisplayError(errorMessage);
       }
 
       const reader = response.body.getReader();
@@ -180,7 +181,7 @@ export function useChat({ accessToken, sessionId }: UseChatOptions) {
             const payload = parseJsonPayload(event.data);
 
             if (!payload || !isStructuredChatResponse(payload)) {
-              throw new Error("The server returned an invalid coaching result.");
+              throw createDisplayError("The server returned an invalid coaching result.");
             }
 
             flushStreamingText();
@@ -210,7 +211,7 @@ export function useChat({ accessToken, sessionId }: UseChatOptions) {
 
       if (!structuredResult) {
         flushStreamingText();
-        throw new Error(
+        throw createDisplayError(
           errorMessage ?? "The coaching stream ended before a result was returned.",
         );
       }
@@ -235,7 +236,7 @@ export function useChat({ accessToken, sessionId }: UseChatOptions) {
           error: message,
         }));
 
-        throw new Error(message);
+        throw createDisplayError(message);
       }
 
       const message =
@@ -249,7 +250,7 @@ export function useChat({ accessToken, sessionId }: UseChatOptions) {
         error: message,
       }));
 
-      throw new Error(message);
+      throw error instanceof Error ? error : new Error(message);
     } finally {
       abortRef.current = null;
       flushStreamingText();

@@ -210,13 +210,17 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
             activeSession = await loadActiveSessionDraft(user.id);
           }
 
-          const pendingStopSync =
+          const pendingStopBlockId =
             activeTimerSession && latestBlock && !latestBlock.ended_at
+              ? latestBlock.id
+              : null;
+          const pendingStopSync =
+            activeTimerSession && pendingStopBlockId
               ? pendingSyncs.find(
                   (sync) =>
                     sync.kind === "stop_block" &&
                     sync.sessionId === activeTimerSession.id &&
-                    (sync.blockId === null || sync.blockId === latestBlock.id),
+                    (sync.blockId === null || sync.blockId === pendingStopBlockId),
                 )
               : null;
 

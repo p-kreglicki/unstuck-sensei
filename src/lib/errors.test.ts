@@ -1,4 +1,4 @@
-import { toDisplayError } from "./errors";
+import { createDisplayError, toDisplayError } from "./errors";
 
 describe("toDisplayError", () => {
   it("sanitizes missing relation errors", () => {
@@ -27,12 +27,40 @@ describe("toDisplayError", () => {
     expect(toDisplayError({}, "fallback")).toBe("fallback");
   });
 
-  it("returns other messages unchanged", () => {
+  it("returns the message when it matches the fallback", () => {
+    expect(toDisplayError({ message: "fallback" }, "fallback")).toBe("fallback");
+  });
+
+  it("falls back for unrecognized database errors", () => {
     expect(
       toDisplayError(
-        { message: "Unable to save your draft session." },
+        {
+          message:
+            'insert or update on table "sessions" violates foreign key constraint "sessions_user_id_fkey"',
+        },
         "fallback",
       ),
-    ).toBe("Unable to save your draft session.");
+    ).toBe("fallback");
+  });
+
+  it("falls back for unrecognized infrastructure errors", () => {
+    expect(
+      toDisplayError(
+        {
+          message:
+            "failed to connect to pg-pooler.internal.supabase.net: connection refused",
+        },
+        "fallback",
+      ),
+    ).toBe("fallback");
+  });
+
+  it("preserves displayable app messages", () => {
+    expect(
+      toDisplayError(
+        createDisplayError("Your session expired. Sign in again to continue."),
+        "fallback",
+      ),
+    ).toBe("Your session expired. Sign in again to continue.");
   });
 });

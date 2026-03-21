@@ -1,3 +1,17 @@
+const DATABASE_SETUP_MESSAGE =
+  "Database setup is incomplete. Run the Supabase migrations for this project and retry.";
+const DISPLAYABLE_ERROR_FLAG = "displayable";
+
+type DisplayableError = Error & {
+  displayable: true;
+};
+
+export function createDisplayError(message: string): DisplayableError {
+  return Object.assign(new Error(message), {
+    [DISPLAYABLE_ERROR_FLAG]: true as const,
+  });
+}
+
 export function toDisplayError(error: unknown, fallbackMessage: string) {
   const message = readErrorMessage(error);
 
@@ -9,10 +23,14 @@ export function toDisplayError(error: unknown, fallbackMessage: string) {
     /relation .* does not exist/i.test(message) ||
     /column .* does not exist/i.test(message)
   ) {
-    return "Database setup is incomplete. Run the Supabase migrations for this project and retry.";
+    return DATABASE_SETUP_MESSAGE;
   }
 
-  return message;
+  if (message === fallbackMessage || isDisplayError(error)) {
+    return message;
+  }
+
+  return fallbackMessage;
 }
 
 function readErrorMessage(error: unknown) {
@@ -35,4 +53,12 @@ function readErrorMessage(error: unknown) {
   }
 
   return null;
+}
+
+function isDisplayError(error: unknown): error is DisplayableError {
+  return (
+    error instanceof Error &&
+    DISPLAYABLE_ERROR_FLAG in error &&
+    error.displayable === true
+  );
 }

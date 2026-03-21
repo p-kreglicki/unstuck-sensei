@@ -99,14 +99,7 @@ const defaultTimerState: TimerCommandState = {
   timerRevision: null,
 };
 
-const defaultTimerContextState: TimerState = {
-  currentBlockId: null,
-  durationSecs: null,
-  extended: false,
-  sessionId: null,
-  status: "idle",
-  timerRevision: null,
-};
+const defaultTimerContextState: TimerState = toTimerContextState(defaultTimerState);
 
 const TimerContext = createContext<TimerContextValue | null>(null);
 const TimerCountdownContext = createContext<number | null>(null);
