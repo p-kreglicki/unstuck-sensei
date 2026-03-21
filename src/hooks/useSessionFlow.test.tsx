@@ -168,6 +168,7 @@ function createTimerHookValue(overrides: Record<string, unknown> = {}) {
     startTimer: vi.fn(),
     state: idleTimerState,
     stopTimer: vi.fn(),
+    withPendingSyncLock: vi.fn((work: () => Promise<unknown>) => work()),
     ...overrides,
   };
 }
@@ -484,9 +485,10 @@ describe("useSessionFlow", () => {
   });
 
   it("reverts extension start with the durable post-extension revision when local extend fails", async () => {
+    const endedAt = new Date(Date.now() - 60_000).toISOString();
     const activeTimerSession = createSessionRow({
       timer_duration_seconds: 1500,
-      timer_ended_at: "2026-03-17T10:35:00.000Z",
+      timer_ended_at: endedAt,
       timer_extended: false,
       timer_revision: 5,
       timer_started_at: "2026-03-17T10:10:00.000Z",
@@ -495,7 +497,7 @@ describe("useSessionFlow", () => {
 
     useTimerMock.mockReturnValue(createTimerHookValue({
       ensureCheckinDurable: vi.fn().mockResolvedValue({
-        endedAt: "2026-03-17T10:35:00.000Z",
+        endedAt,
         timerRevision: 5,
       }),
       extendTimer: extendTimerMock,
@@ -513,14 +515,14 @@ describe("useSessionFlow", () => {
     loadActiveTimerSessionMock.mockResolvedValue(activeTimerSession);
     loadLatestTimerBlockMock.mockResolvedValue(
       createTimerBlockRow({
-        ended_at: "2026-03-17T10:35:00.000Z",
+        ended_at: endedAt,
       }),
     );
     startExtensionBlockMock.mockResolvedValue({
       blockId: "block-2",
       durationSeconds: 1500,
       sessionId: "session-1",
-      startedAt: "2026-03-17T10:35:01.000Z",
+      startedAt: new Date(Date.now() - 30_000).toISOString(),
       status: "ok",
       timerRevision: 6,
     });
@@ -606,9 +608,10 @@ describe("useSessionFlow", () => {
   });
 
   it("ignores duplicate check-ins before React rerenders", async () => {
+    const endedAt = new Date(Date.now() - 60_000).toISOString();
     const activeTimerSession = createSessionRow({
       timer_duration_seconds: 1500,
-      timer_ended_at: "2026-03-17T10:35:00.000Z",
+      timer_ended_at: endedAt,
       timer_extended: false,
       timer_revision: 5,
       timer_started_at: "2026-03-17T10:10:00.000Z",
@@ -634,7 +637,7 @@ describe("useSessionFlow", () => {
     loadActiveTimerSessionMock.mockResolvedValue(activeTimerSession);
     loadLatestTimerBlockMock.mockResolvedValue(
       createTimerBlockRow({
-        ended_at: "2026-03-17T10:35:00.000Z",
+        ended_at: endedAt,
       }),
     );
     checkInTimerSessionMock.mockResolvedValue({
@@ -663,7 +666,7 @@ describe("useSessionFlow", () => {
 
     await act(async () => {
       ensureCheckinDurableDeferred.resolve({
-        endedAt: "2026-03-17T10:35:00.000Z",
+        endedAt,
         timerRevision: 5,
       });
       await Promise.all([firstRun, secondRun]);
@@ -721,5 +724,35 @@ describe("useSessionFlow", () => {
     expect(result.current.statusMessage).toBe(
       "The timer stopped locally. I’ll keep trying to save that change.",
     );
+  });
+
+  it("serializes bootstrap timer reads behind the pending-sync lock", async () => {
+    const bootstrapLock = createDeferred<unknown>();
+    const refreshStatusMock = vi.fn().mockResolvedValue(idleTimerState);
+    const getPendingSyncsMock = vi.fn().mockResolvedValue([]);
+
+    useTimerMock.mockReturnValue(createTimerHookValue({
+      getPendingSyncs: getPendingSyncsMock,
+      refreshStatus: refreshStatusMock,
+      withPendingSyncLock: vi.fn(async (work: () => Promise<unknown>) => {
+        await bootstrapLock.promise;
+        return work();
+      }),
+    }));
+
+    renderHook(() => useSessionFlow({ locationState: null }));
+
+    expect(refreshStatusMock).not.toHaveBeenCalled();
+    expect(getPendingSyncsMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      bootstrapLock.resolve(undefined);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(refreshStatusMock).toHaveBeenCalledTimes(1);
+      expect(getPendingSyncsMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -12,6 +12,7 @@ use crate::detection::{recover_detection_state_lock, DetectionState};
 
 pub const TIMER_STATE_CHANGED_EVENT: &str = "timer-state-changed";
 
+// Keep this mirrored with src/lib/timer.ts until we introduce shared cross-runtime config.
 const CHECKIN_GRACE_HOURS: i64 = 12;
 const NOTIFICATION_TITLE: &str = "Time's up!";
 const NOTIFICATION_BODY: &str = "How did it go?";
@@ -686,7 +687,7 @@ fn load_persisted_timer_state(
     Ok((snapshot, pending_syncs))
 }
 
-fn parse_timestamp(value: &str) -> Result<DateTime<Utc>, String> {
+pub(crate) fn parse_timestamp(value: &str) -> Result<DateTime<Utc>, String> {
     DateTime::parse_from_rfc3339(value)
         .map(|value| value.with_timezone(&Utc))
         .map_err(|error| error.to_string())

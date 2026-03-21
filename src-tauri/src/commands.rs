@@ -1,6 +1,5 @@
 use std::sync::Mutex;
 
-use chrono::{DateTime, Utc};
 use tauri::{plugin::PermissionState, AppHandle, State, Wry};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_store::StoreExt;
@@ -13,7 +12,7 @@ use crate::{
     execute_detection_effects,
     timer::{
         execute_timer_effects, maybe_spawn_tick_loop, recover_timer_state_lock, TimerPendingSync,
-        TimerRuntimeEffect, TimerState, TimerStatusResponse,
+        TimerRuntimeEffect, TimerState, TimerStatusResponse, parse_timestamp,
     },
 };
 
@@ -318,10 +317,4 @@ pub fn clear_timer_state(
 fn log_nonblocking_error(message: &str) {
     #[cfg(debug_assertions)]
     eprintln!("[commands] {message}");
-}
-
-fn parse_timestamp(value: &str) -> Result<DateTime<Utc>, String> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|value| value.with_timezone(&Utc))
-        .map_err(|error| error.to_string())
 }

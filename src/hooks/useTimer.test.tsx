@@ -1,5 +1,5 @@
 import { act, render, waitFor } from "@testing-library/react";
-import { TimerProvider, useTimer } from "./useTimer";
+import { TimerProvider, useTimer, useTimerCountdown } from "./useTimer";
 
 const {
   completeTimerBlockMock,
@@ -240,6 +240,70 @@ describe("TimerProvider", () => {
     });
   });
 
+  it("does not rerender timer action consumers for countdown-only updates", async () => {
+    let timerConsumerRenders = 0;
+    let countdownConsumerRenders = 0;
+
+    function TimerConsumer() {
+      timerConsumerRenders += 1;
+      useTimer();
+      return null;
+    }
+
+    function CountdownConsumer() {
+      countdownConsumerRenders += 1;
+      useTimerCountdown();
+      return null;
+    }
+
+    render(
+      <TimerProvider>
+        <TimerConsumer />
+        <CountdownConsumer />
+      </TimerProvider>,
+    );
+
+    await waitFor(() => {
+      expect(timerStateChangedHandler).not.toBeNull();
+    });
+
+    await act(async () => {
+      timerStateChangedHandler?.({
+        payload: {
+          currentBlockId: "block-1",
+          durationSecs: 1500,
+          extended: false,
+          remainingSecs: 1500,
+          sessionId: "session-1",
+          status: "running",
+          timerRevision: 1,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    const timerRenderBaseline = timerConsumerRenders;
+    const countdownRenderBaseline = countdownConsumerRenders;
+
+    await act(async () => {
+      timerStateChangedHandler?.({
+        payload: {
+          currentBlockId: "block-1",
+          durationSecs: 1500,
+          extended: false,
+          remainingSecs: 1499,
+          sessionId: "session-1",
+          status: "running",
+          timerRevision: 1,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(timerConsumerRenders).toBe(timerRenderBaseline);
+    expect(countdownConsumerRenders).toBe(countdownRenderBaseline + 1);
+  });
+
   it("reuses the pending-sync serialization path for check-in durability", async () => {
     const completionDeferred = createDeferred<{
       endedAt: string;
@@ -366,5 +430,242 @@ describe("TimerProvider", () => {
     expect(invokeMock).toHaveBeenCalledWith("clear_pending_timer_syncs", {
       syncIds: ["sync-1"],
     });
+  });
+
+  it("returns fallback durability state when no completion sync remains", async () => {
+    function TimerConsumer() {
+      latestTimer = useTimer();
+      return null;
+    }
+
+    loadLatestTimerBlockMock.mockResolvedValue({
+      duration_seconds: 1500,
+      ended_at: "2026-03-21T10:25:00.000Z",
+      id: "block-1",
+    });
+
+    render(
+      <TimerProvider>
+        <TimerConsumer />
+      </TimerProvider>,
+    );
+
+    await waitFor(() => {
+      expect(latestTimer).not.toBeNull();
+    });
+
+    await expect(
+      latestTimer!.ensureCheckinDurable({
+        durationSecs: 1500,
+        extended: false,
+        fallbackEndedAt: null,
+        fallbackRevision: 7,
+        latestBlockId: "block-1",
+        sessionId: "session-1",
+      }),
+    ).resolves.toEqual({
+      endedAt: "2026-03-21T10:25:00.000Z",
+      timerRevision: 7,
+    });
+  });
+
+  it("retries replayed syncs after a mid-loop durability failure", async () => {
+    const syncs = [
+      {
+        blockId: "block-1",
+        expectedRevision: 1,
+        id: "sync-1",
+        kind: "complete_block" as const,
+        occurredAt: "2026-03-21T10:25:00.000Z",
+        sessionId: "session-1",
+      },
+      {
+        blockId: "block-1",
+        expectedRevision: 2,
+        id: "sync-2",
+        kind: "stop_block" as const,
+        occurredAt: "2026-03-21T10:26:00.000Z",
+        sessionId: "session-1",
+      },
+    ];
+    let pendingSyncs = [...syncs];
+    let currentTimerState: TimerStatePayload = {
+      currentBlockId: "block-1",
+      durationSecs: 1500,
+      extended: false,
+      remainingSecs: 200,
+      sessionId: "session-1",
+      status: "running",
+      timerRevision: 1,
+    };
+    let latestBlock = {
+      duration_seconds: 1500,
+      ended_at: null as string | null,
+      id: "block-1",
+    };
+
+    invokeMock.mockImplementation((command: string, args?: { syncIds?: string[] }) => {
+      switch (command) {
+        case "get_pending_timer_syncs":
+          return Promise.resolve([...pendingSyncs]);
+        case "get_timer_state":
+          return Promise.resolve(currentTimerState);
+        case "clear_pending_timer_syncs":
+          pendingSyncs = pendingSyncs.filter(
+            (sync) => !args?.syncIds?.includes(sync.id),
+          );
+          return Promise.resolve(undefined);
+        case "hydrate_awaiting_checkin":
+          currentTimerState = {
+            currentBlockId: "block-1",
+            durationSecs: 1500,
+            extended: false,
+            remainingSecs: null,
+            sessionId: "session-1",
+            status: "awaiting_checkin",
+            timerRevision: 2,
+          };
+          return Promise.resolve(currentTimerState);
+        case "clear_timer_state":
+          currentTimerState = idleTimerState;
+          return Promise.resolve(currentTimerState);
+        default:
+          return Promise.resolve(currentTimerState);
+      }
+    });
+    loadActiveTimerSessionMock.mockResolvedValue({
+      checked_in_at: null,
+      id: "session-1",
+      status: "active",
+      timer_extended: false,
+      timer_revision: 1,
+    });
+    loadLatestTimerBlockMock.mockImplementation(() => Promise.resolve({ ...latestBlock }));
+    completeTimerBlockMock.mockImplementation(async () => {
+      latestBlock = {
+        ...latestBlock,
+        ended_at: syncs[0].occurredAt,
+      };
+      return {
+        endedAt: syncs[0].occurredAt,
+        sessionId: "session-1",
+        status: "ok" as const,
+        timerRevision: 2,
+      };
+    });
+    stopTimerBlockMock
+      .mockRejectedValueOnce(new Error("stop write failed"))
+      .mockResolvedValueOnce({
+        endedAt: syncs[1].occurredAt,
+        sessionId: "session-1",
+        status: "ok" as const,
+        timerRevision: 3,
+      });
+
+    render(
+      <TimerProvider>
+        <div>timer</div>
+      </TimerProvider>,
+    );
+
+    await waitFor(() => {
+      expect(stopTimerBlockMock).toHaveBeenCalledTimes(1);
+    });
+    expect(pendingSyncs.map((sync) => sync.id)).toEqual(["sync-1", "sync-2"]);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(stopTimerBlockMock).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("clear_pending_timer_syncs", {
+        syncIds: ["sync-1", "sync-2"],
+      });
+    });
+    expect(pendingSyncs).toEqual([]);
+  });
+
+  it("replays expire-checkin syncs and clears runtime state", async () => {
+    const pendingSync = {
+      blockId: "block-1",
+      expectedRevision: 3,
+      id: "sync-1",
+      kind: "expire_checkin" as const,
+      occurredAt: new Date(Date.now() - 1000).toISOString(),
+      sessionId: "session-1",
+    };
+    let pendingSyncs = [pendingSync];
+    let currentTimerState: TimerStatePayload = {
+      currentBlockId: "block-1",
+      durationSecs: 1500,
+      extended: false,
+      remainingSecs: null,
+      sessionId: "session-1",
+      status: "awaiting_checkin",
+      timerRevision: 3,
+    };
+
+    invokeMock.mockImplementation((command: string, args?: { syncIds?: string[] }) => {
+      switch (command) {
+        case "get_pending_timer_syncs":
+          return Promise.resolve([...pendingSyncs]);
+        case "get_timer_state":
+          return Promise.resolve(currentTimerState);
+        case "clear_pending_timer_syncs":
+          pendingSyncs = pendingSyncs.filter(
+            (sync) => !args?.syncIds?.includes(sync.id),
+          );
+          return Promise.resolve(undefined);
+        case "clear_timer_state":
+          currentTimerState = idleTimerState;
+          return Promise.resolve(currentTimerState);
+        default:
+          return Promise.resolve(currentTimerState);
+      }
+    });
+    loadActiveTimerSessionMock.mockResolvedValue({
+      checked_in_at: null,
+      id: "session-1",
+      status: "active",
+      timer_extended: false,
+      timer_revision: 3,
+    });
+    loadLatestTimerBlockMock.mockResolvedValue({
+      duration_seconds: 1500,
+      ended_at: new Date().toISOString(),
+      id: "block-1",
+    });
+    expireTimerCheckinMock.mockResolvedValue({
+      sessionId: "session-1",
+      status: "ok" as const,
+      timerRevision: 4,
+    });
+
+    render(
+      <TimerProvider>
+        <div>timer</div>
+      </TimerProvider>,
+    );
+
+    await waitFor(() => {
+      expect(expireTimerCheckinMock).toHaveBeenCalledWith({
+        expectedRevision: 3,
+        expiredAt: pendingSync.occurredAt,
+        sessionId: "session-1",
+      });
+    });
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("clear_pending_timer_syncs", {
+        syncIds: ["sync-1"],
+      });
+    });
+    expect(
+      invokeMock.mock.calls.some(([command]) => command === "clear_timer_state"),
+    ).toBe(true);
+    expect(pendingSyncs).toEqual([]);
   });
 });

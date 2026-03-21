@@ -79,7 +79,6 @@ export function Session() {
               firstStepText={flow.steps[0]?.text ?? null}
               isStopping={flow.isSubmittingTimerAction}
               onStop={() => void flow.handleStopTimer()}
-              remainingSecs={flow.timerState.remainingSecs}
             />
           ) : null}
 

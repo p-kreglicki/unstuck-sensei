@@ -18,6 +18,7 @@ import {
   loadLatestTimerBlock,
   stopTimerBlock,
 } from "../lib/session-records";
+import { isCheckinGraceExpired } from "../lib/timer";
 
 type TimerCommandState = {
   currentBlockId: string | null;
@@ -28,6 +29,8 @@ type TimerCommandState = {
   status: "idle" | "running" | "awaiting_checkin";
   timerRevision: number | null;
 };
+
+type TimerState = Omit<TimerCommandState, "remainingSecs">;
 
 type PendingTimerSync = {
   blockId: string | null;
@@ -48,9 +51,10 @@ type TimerContextValue = {
   hydrateRunning(input: TimerMutationInput & { extended: boolean }): Promise<TimerCommandState>;
   refreshStatus(): Promise<TimerCommandState>;
   resolveCheckin(): Promise<TimerCommandState>;
-  state: TimerCommandState;
+  state: TimerState;
   startTimer(input: TimerMutationInput): Promise<TimerCommandState>;
   stopTimer(): Promise<TimerCommandState>;
+  withPendingSyncLock<T>(work: () => Promise<T>): Promise<T>;
 };
 
 type TimerMutationInput = {
@@ -85,8 +89,6 @@ type DurableCheckinState = {
 };
 
 const TIMER_STATE_CHANGED_EVENT = "timer-state-changed";
-const CHECKIN_GRACE_HOURS = 12;
-
 const defaultTimerState: TimerCommandState = {
   currentBlockId: null,
   durationSecs: null,
@@ -97,22 +99,22 @@ const defaultTimerState: TimerCommandState = {
   timerRevision: null,
 };
 
+const defaultTimerContextState: TimerState = {
+  currentBlockId: null,
+  durationSecs: null,
+  extended: false,
+  sessionId: null,
+  status: "idle",
+  timerRevision: null,
+};
+
 const TimerContext = createContext<TimerContextValue | null>(null);
+const TimerCountdownContext = createContext<number | null>(null);
 
 function logTimerError(message: string, error: unknown) {
   if (import.meta.env.DEV) {
     console.warn(`[timer] ${message}`, error);
   }
-}
-
-function isCheckinGraceExpired(endedAt: string | null) {
-  if (!endedAt) {
-    return false;
-  }
-
-  return (
-    Date.now() - new Date(endedAt).getTime() >= CHECKIN_GRACE_HOURS * 60 * 60 * 1000
-  );
 }
 
 async function runTimerCommand(
@@ -131,9 +133,32 @@ async function runTimerCommand(
   return invoke(command, args);
 }
 
+function toTimerContextState(nextState: TimerCommandState): TimerState {
+  return {
+    currentBlockId: nextState.currentBlockId,
+    durationSecs: nextState.durationSecs,
+    extended: nextState.extended,
+    sessionId: nextState.sessionId,
+    status: nextState.status,
+    timerRevision: nextState.timerRevision,
+  };
+}
+
+function isSameTimerContextState(left: TimerState, right: TimerState) {
+  return (
+    left.currentBlockId === right.currentBlockId &&
+    left.durationSecs === right.durationSecs &&
+    left.extended === right.extended &&
+    left.sessionId === right.sessionId &&
+    left.status === right.status &&
+    left.timerRevision === right.timerRevision
+  );
+}
+
 export function TimerProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const [state, setState] = useState<TimerCommandState>(defaultTimerState);
+  const [state, setState] = useState<TimerState>(defaultTimerContextState);
+  const [remainingSecs, setRemainingSecs] = useState<number | null>(null);
   const stateRef = useRef(defaultTimerState);
   const pendingSyncLockRef = useRef<Promise<void>>(Promise.resolve());
   const replayPendingSyncsInFlightRef = useRef<Promise<void> | null>(null);
@@ -141,7 +166,14 @@ export function TimerProvider({ children }: { children: ReactNode }) {
 
   const applyState = useCallback((nextState: TimerCommandState) => {
     stateRef.current = nextState;
-    setState(nextState);
+
+    const nextContextState = toTimerContextState(nextState);
+    setState((current) =>
+      isSameTimerContextState(current, nextContextState) ? current : nextContextState,
+    );
+    setRemainingSecs((current) =>
+      current === nextState.remainingSecs ? current : nextState.remainingSecs,
+    );
   }, []);
 
   const runPendingSyncExclusive = useCallback(async <T,>(
@@ -607,6 +639,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       startTimer,
       state,
       stopTimer,
+      withPendingSyncLock: runPendingSyncExclusive,
     }),
     [
       clearPendingSyncs,
@@ -621,10 +654,17 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       startTimer,
       state,
       stopTimer,
+      runPendingSyncExclusive,
     ],
   );
 
-  return <TimerContext.Provider value={value}>{children}</TimerContext.Provider>;
+  return (
+    <TimerContext.Provider value={value}>
+      <TimerCountdownContext.Provider value={remainingSecs}>
+        {children}
+      </TimerCountdownContext.Provider>
+    </TimerContext.Provider>
+  );
 }
 
 export function useTimer() {
@@ -635,4 +675,8 @@ export function useTimer() {
   }
 
   return value;
+}
+
+export function useTimerCountdown() {
+  return useContext(TimerCountdownContext);
 }

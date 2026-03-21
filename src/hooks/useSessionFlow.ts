@@ -37,9 +37,9 @@ import {
   type StructuredChatResponse,
 } from "../../shared/session/session-protocol.js";
 import { formatSessionReminder, moveStep } from "../lib/session-flow";
+import { isCheckinGraceExpired } from "../lib/timer";
 
 const TIMER_DURATION_SECONDS = 25 * 60;
-const CHECKIN_GRACE_HOURS = 12;
 const LOCAL_STOP_PENDING_MESSAGE =
   "The timer stopped locally. I’ll keep trying to save that change.";
 
@@ -97,16 +97,6 @@ async function persistSessionPatch(input: {
   };
 }
 
-function isCheckinGraceExpired(endedAt: string | null) {
-  if (!endedAt) {
-    return false;
-  }
-
-  return (
-    Date.now() - new Date(endedAt).getTime() >= CHECKIN_GRACE_HOURS * 60 * 60 * 1000
-  );
-}
-
 function requireBlockId(
   blockId: string | undefined,
   fallbackMessage: string,
@@ -133,6 +123,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     resolveCheckin,
     startTimer,
     stopTimer,
+    withPendingSyncLock,
   } = timer;
   const requestedSource = readRequestedSource(locationState);
   const [isBooting, setIsBooting] = useState(true);
@@ -197,26 +188,98 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
       setStatusMessage(null);
 
       try {
-        const [rustTimerState, pendingSyncs, activeTimerSession] = await Promise.all([
-          refreshStatus(),
-          getPendingSyncs(),
-          loadActiveTimerSession(user.id),
-        ]);
-        const activeDraftSession = activeTimerSession
-          ? null
-          : await loadActiveSessionDraft(user.id);
-        const activeSession = activeTimerSession ?? activeDraftSession;
+        const timerBootstrap = await withPendingSyncLock(async () => {
+          const [rustTimerState, pendingSyncs, activeTimerSession] = await Promise.all([
+            refreshStatus(),
+            getPendingSyncs(),
+            loadActiveTimerSession(user.id),
+          ]);
+          let activeSession = activeTimerSession;
+          let latestBlock = activeTimerSession
+            ? await loadLatestTimerBlock(activeTimerSession.id).catch((error) => {
+                if (import.meta.env.DEV) {
+                  console.warn("[session] latest timer block load failed:", error);
+                }
 
-        const [recent, sessionMessages, latestBlock] = await Promise.all([
-          loadRecentSessionSummaries(user.id, activeSession?.id).catch((error) => {
+                return null;
+              })
+            : null;
+          let nextStatusMessage: string | null = null;
+
+          if (!activeTimerSession) {
+            activeSession = await loadActiveSessionDraft(user.id);
+          }
+
+          const pendingStopSync =
+            activeTimerSession && latestBlock && !latestBlock.ended_at
+              ? pendingSyncs.find(
+                  (sync) =>
+                    sync.kind === "stop_block" &&
+                    sync.sessionId === activeTimerSession.id &&
+                    (sync.blockId === null || sync.blockId === latestBlock.id),
+                )
+              : null;
+
+          if (pendingStopSync) {
+            await clearRuntime();
+            activeSession = await loadActiveSessionDraft(user.id);
+            latestBlock = null;
+            nextStatusMessage = LOCAL_STOP_PENDING_MESSAGE;
+          } else if (activeTimerSession && latestBlock) {
+            if (latestBlock.ended_at && !activeTimerSession.checked_in_at) {
+              if (isCheckinGraceExpired(latestBlock.ended_at)) {
+                await expireTimerCheckin({
+                  expectedRevision: activeTimerSession.timer_revision,
+                  expiredAt: new Date().toISOString(),
+                  sessionId: activeTimerSession.id,
+                }).catch((error) => {
+                  if (import.meta.env.DEV) {
+                    console.warn("[session] stale timer expiry failed:", error);
+                  }
+                });
+                await clearRuntime();
+                activeSession = await loadActiveSessionDraft(user.id);
+                latestBlock = null;
+              } else if (rustTimerState.status !== "awaiting_checkin") {
+                await hydrateAwaitingCheckin({
+                  blockId: latestBlock.id,
+                  checkinStartedAt: latestBlock.ended_at,
+                  durationSecs: latestBlock.duration_seconds,
+                  extended: activeTimerSession.timer_extended ?? false,
+                  sessionId: activeTimerSession.id,
+                  timerRevision: activeTimerSession.timer_revision,
+                });
+              }
+            } else if (!latestBlock.ended_at && rustTimerState.status !== "running") {
+              await hydrateRunning({
+                blockId: latestBlock.id,
+                durationSecs: latestBlock.duration_seconds,
+                extended: activeTimerSession.timer_extended ?? false,
+                sessionId: activeTimerSession.id,
+                startedAt: latestBlock.started_at,
+                timerRevision: activeTimerSession.timer_revision,
+              });
+            }
+          }
+
+          return {
+            activeSession,
+            activeTimerSession,
+            latestBlock,
+            statusMessage: nextStatusMessage,
+          };
+        });
+
+        const [recent, sessionMessages] = await Promise.all([
+          loadRecentSessionSummaries(user.id, timerBootstrap.activeSession?.id).catch((error) => {
             if (import.meta.env.DEV) {
               console.warn("[session] recent summaries failed:", error);
             }
 
             return [];
           }),
-          activeSession
-            ? loadConversationMessages(activeSession.id).catch((error) => {
+          timerBootstrap.activeSession
+            ? loadConversationMessages(timerBootstrap.activeSession.id).catch((error) => {
                 if (import.meta.env.DEV) {
                   console.warn("[session] conversation load failed:", error);
                 }
@@ -224,78 +287,27 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
                 return [];
               })
             : Promise.resolve([]),
-          activeTimerSession
-            ? loadLatestTimerBlock(activeTimerSession.id).catch((error) => {
-                if (import.meta.env.DEV) {
-                  console.warn("[session] latest timer block load failed:", error);
-                }
-
-                return null;
-              })
-            : Promise.resolve(null),
         ]);
-
-        const pendingStopSync =
-          activeTimerSession && latestBlock && !latestBlock.ended_at
-            ? pendingSyncs.find(
-                (sync) =>
-                  sync.kind === "stop_block" &&
-                  sync.sessionId === activeTimerSession.id &&
-                  (sync.blockId === null || sync.blockId === latestBlock.id),
-              )
-            : null;
-
-        if (pendingStopSync) {
-          await clearRuntime();
-
-          const draftSession = await loadActiveSessionDraft(user.id);
-          const draftMessages = draftSession
-            ? await loadConversationMessages(draftSession.id).catch(() => [])
-            : [];
-
-          if (!active) {
-            return;
-          }
-
-          setRecentSessions(recent);
-          setSessionRow(draftSession);
-          setLatestTimerBlock(null);
-          setMessages(draftMessages);
-          setStatusMessage(LOCAL_STOP_PENDING_MESSAGE);
-          setStuckOnInput(
-            draftSession?.stuck_on ??
-              (requestedSource === "detection"
-                ? "I was bouncing between apps and avoiding "
-                : ""),
-          );
-          setEnergyLevel(
-            isEnergyLevel(draftSession?.energy_level)
-              ? draftSession.energy_level
-              : null,
-          );
-          setClarifyingAnswer(draftSession?.clarifying_answer ?? "");
-          setSteps(parseSessionSteps(draftSession?.steps));
-          return;
-        }
 
         if (!active) {
           return;
         }
 
         setRecentSessions(recent);
-        setSessionRow(activeSession);
-        setLatestTimerBlock(latestBlock);
+        setSessionRow(timerBootstrap.activeSession);
+        setLatestTimerBlock(timerBootstrap.latestBlock);
         setMessages(sessionMessages);
+        setStatusMessage(timerBootstrap.statusMessage);
 
-        if (activeSession) {
-          setStuckOnInput(activeSession.stuck_on ?? "");
+        if (timerBootstrap.activeSession) {
+          setStuckOnInput(timerBootstrap.activeSession.stuck_on ?? "");
           setEnergyLevel(
-            isEnergyLevel(activeSession.energy_level)
-              ? activeSession.energy_level
+            isEnergyLevel(timerBootstrap.activeSession.energy_level)
+              ? timerBootstrap.activeSession.energy_level
               : null,
           );
-          setClarifyingAnswer(activeSession.clarifying_answer ?? "");
-          setSteps(parseSessionSteps(activeSession.steps));
+          setClarifyingAnswer(timerBootstrap.activeSession.clarifying_answer ?? "");
+          setSteps(parseSessionSteps(timerBootstrap.activeSession.steps));
         } else {
           setEnergyLevel(null);
           setClarifyingAnswer("");
@@ -305,77 +317,6 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
               ? "I was bouncing between apps and avoiding "
               : "",
           );
-        }
-
-        if (!activeTimerSession || !latestBlock) {
-          return;
-        }
-
-        if (latestBlock.ended_at && !activeTimerSession.checked_in_at) {
-          if (isCheckinGraceExpired(latestBlock.ended_at)) {
-            await expireTimerCheckin({
-              expectedRevision: activeTimerSession.timer_revision,
-              expiredAt: new Date().toISOString(),
-              sessionId: activeTimerSession.id,
-            }).catch((error) => {
-              if (import.meta.env.DEV) {
-                console.warn("[session] stale timer expiry failed:", error);
-              }
-            });
-            await clearRuntime();
-
-            const draftSession = await loadActiveSessionDraft(user.id);
-            const draftMessages = draftSession
-              ? await loadConversationMessages(draftSession.id).catch(() => [])
-              : [];
-
-            if (!active) {
-              return;
-            }
-
-            setSessionRow(draftSession);
-            setLatestTimerBlock(null);
-            setMessages(draftMessages);
-            setStatusMessage(null);
-            setStuckOnInput(
-              draftSession?.stuck_on ??
-                (requestedSource === "detection"
-                  ? "I was bouncing between apps and avoiding "
-                  : ""),
-            );
-            setEnergyLevel(
-              isEnergyLevel(draftSession?.energy_level)
-                ? draftSession.energy_level
-                : null,
-            );
-            setClarifyingAnswer(draftSession?.clarifying_answer ?? "");
-            setSteps(parseSessionSteps(draftSession?.steps));
-            return;
-          }
-
-          if (rustTimerState.status !== "awaiting_checkin") {
-            await hydrateAwaitingCheckin({
-              blockId: latestBlock.id,
-              checkinStartedAt: latestBlock.ended_at,
-              durationSecs: latestBlock.duration_seconds,
-              extended: activeTimerSession.timer_extended ?? false,
-              sessionId: activeTimerSession.id,
-              timerRevision: activeTimerSession.timer_revision,
-            });
-          }
-
-          return;
-        }
-
-        if (!latestBlock.ended_at && rustTimerState.status !== "running") {
-          await hydrateRunning({
-            blockId: latestBlock.id,
-            durationSecs: latestBlock.duration_seconds,
-            extended: activeTimerSession.timer_extended ?? false,
-            sessionId: activeTimerSession.id,
-            startedAt: latestBlock.started_at,
-            timerRevision: activeTimerSession.timer_revision,
-          });
         }
       } catch (error) {
         if (!active) {
@@ -403,6 +344,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     hydrateRunning,
     refreshStatus,
     user?.id,
+    withPendingSyncLock,
   ]);
 
   async function handleSaveStuckTask() {
@@ -971,7 +913,6 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     steps,
     streamingTranscriptRow,
     stuckOnInput,
-    timerState: timer.state,
     transcriptRows,
   };
 }

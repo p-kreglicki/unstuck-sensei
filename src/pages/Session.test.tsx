@@ -8,6 +8,7 @@ const {
   loadActiveSessionDraftMock,
   loadConversationMessagesMock,
   loadRecentSessionSummariesMock,
+  useTimerCountdownMock,
   useTimerMock,
   useAuthMock,
   useChatMock,
@@ -17,6 +18,7 @@ const {
   loadActiveSessionDraftMock: vi.fn(),
   loadConversationMessagesMock: vi.fn(),
   loadRecentSessionSummariesMock: vi.fn(),
+  useTimerCountdownMock: vi.fn(),
   useTimerMock: vi.fn(),
   useAuthMock: vi.fn(),
   useChatMock: vi.fn(),
@@ -31,6 +33,7 @@ vi.mock("../hooks/useChat", () => ({
 }));
 
 vi.mock("../hooks/useTimer", () => ({
+  useTimerCountdown: () => useTimerCountdownMock(),
   useTimer: () => useTimerMock(),
 }));
 
@@ -105,7 +108,9 @@ describe("Session", () => {
         timerRevision: null,
       },
       stopTimer: vi.fn(),
+      withPendingSyncLock: vi.fn((work: () => Promise<unknown>) => work()),
     });
+    useTimerCountdownMock.mockReturnValue(null);
     loadActiveSessionDraftMock.mockResolvedValue(null);
     loadActiveTimerSessionMock.mockResolvedValue(null);
     loadConversationMessagesMock.mockResolvedValue([]);

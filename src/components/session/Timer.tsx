@@ -1,8 +1,9 @@
+import { useTimerCountdown } from "../../hooks/useTimer";
+
 type TimerProps = {
   firstStepText: string | null;
   isStopping: boolean;
   onStop(): void;
-  remainingSecs: number | null;
 };
 
 function formatRemaining(remainingSecs: number | null) {
@@ -19,8 +20,9 @@ export function Timer({
   firstStepText,
   isStopping,
   onStop,
-  remainingSecs,
 }: TimerProps) {
+  const remainingSecs = useTimerCountdown();
+
   return (
     <section className="rounded-[28px] border border-teal-300/20 bg-teal-300/10 p-5">
       <p className="text-xs uppercase tracking-[0.3em] text-teal-200/80">Work block</p>
