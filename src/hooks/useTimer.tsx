@@ -566,9 +566,6 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     });
 
     const handleWindowFocus = () => {
-      void refreshStatus().catch((error) => {
-        logTimerError("failed to refresh timer status on focus", error);
-      });
       void replayPendingSyncs().catch((error) => {
         logTimerError("failed to replay pending timer syncs on focus", error);
       });

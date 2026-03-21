@@ -198,6 +198,48 @@ describe("TimerProvider", () => {
     });
   });
 
+  it("reuses the replay-owned timer refresh path on window focus", async () => {
+    loadActiveTimerSessionMock.mockResolvedValue({
+      checked_in_at: null,
+      id: "session-1",
+      status: "active",
+      timer_extended: false,
+      timer_revision: 1,
+    });
+    loadLatestTimerBlockMock.mockResolvedValue({
+      duration_seconds: 1500,
+      ended_at: null,
+      id: "block-1",
+    });
+
+    render(
+      <TimerProvider>
+        <div>timer</div>
+      </TimerProvider>,
+    );
+
+    await waitFor(() => {
+      expect(loadLatestTimerBlockMock).toHaveBeenCalledTimes(1);
+    });
+
+    const getTimerStateCallsBeforeFocus = invokeMock.mock.calls.filter(
+      ([command]) => command === "get_timer_state",
+    ).length;
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const getTimerStateCallsAfterFocus = invokeMock.mock.calls.filter(
+        ([command]) => command === "get_timer_state",
+      ).length;
+
+      expect(getTimerStateCallsAfterFocus).toBe(getTimerStateCallsBeforeFocus + 2);
+    });
+  });
+
   it("reuses the pending-sync serialization path for check-in durability", async () => {
     const completionDeferred = createDeferred<{
       endedAt: string;
