@@ -37,19 +37,16 @@ import {
   type StructuredChatResponse,
 } from "../../shared/session/session-protocol.js";
 import { formatSessionReminder, moveStep } from "../lib/session-flow";
+import {
+  deriveThreadItems,
+  hasMatchingConversationMessage,
+  type SessionStage,
+} from "../lib/session-thread";
 import { isCheckinGraceExpired } from "../lib/timer";
 
 const TIMER_DURATION_SECONDS = 25 * 60;
 const LOCAL_STOP_PENDING_MESSAGE =
   "The timer stopped locally. I’ll keep trying to save that change.";
-
-type SessionStage =
-  | "clarifying"
-  | "checkin"
-  | "compose"
-  | "energy"
-  | "steps"
-  | "timer";
 
 type SessionLocationState = {
   sessionSource?: SessionSource;
@@ -175,6 +172,29 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
           role: "assistant" as const,
         }
       : null;
+  const threadItems = useMemo(
+    () =>
+      deriveThreadItems({
+        chatState: {
+          isStreaming: chat.state.isStreaming,
+          streamingText: chat.state.streamingText,
+        },
+        currentStage,
+        latestTimerBlock,
+        messages,
+        sessionRow,
+        steps,
+      }),
+    [
+      chat.state.isStreaming,
+      chat.state.streamingText,
+      currentStage,
+      latestTimerBlock,
+      messages,
+      sessionRow,
+      steps,
+    ],
+  );
 
   useEffect(() => {
     let active = true;
@@ -373,9 +393,22 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
 
     try {
       const nextSession = sessionRow
-        ? await updateSessionDraft(sessionRow.id, {
-            source: sessionRow.source ?? requestedSource,
-            stuck_on: stuckOn,
+        ? await persistSessionPatch({
+            currentSession: sessionRow,
+            patch: {
+              source: sessionRow.source ?? requestedSource,
+              stuck_on: stuckOn,
+            },
+            userMessage: hasMatchingConversationMessage({
+              content: stuckOn,
+              messages,
+              role: "user",
+            })
+              ? undefined
+              : {
+                  content: stuckOn,
+                  role: "user",
+                },
           })
         : await createSessionDraft({
             source: requestedSource,
@@ -383,8 +416,28 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
             userId: user.id,
           });
 
+      if ("nextSession" in nextSession) {
+        setSessionRow(nextSession.nextSession);
+        setStuckOnInput(nextSession.nextSession.stuck_on ?? stuckOn);
+
+        const openingUserMessage = nextSession.userMessage;
+
+        if (openingUserMessage) {
+          setMessages((current) => [...current, openingUserMessage]);
+        }
+
+        return;
+      }
+
       setSessionRow(nextSession);
       setStuckOnInput(nextSession.stuck_on ?? stuckOn);
+
+      const userMessage = await insertConversationMessage({
+        content: stuckOn,
+        role: "user",
+        sessionId: nextSession.id,
+      });
+      setMessages((current) => [...current, userMessage]);
     } catch (error) {
       setStatusMessage(toDisplayError(error, "Unable to save your draft session."));
     } finally {
@@ -413,25 +466,14 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     setStatusMessage(null);
 
     try {
-      const { nextSession, userMessage } = await persistSessionPatch({
+      const { nextSession } = await persistSessionPatch({
         currentSession: sessionRow,
         patch: {
           energy_level: energyLevel,
         },
-        userMessage:
-          messages.length === 0
-            ? {
-                content: stuckOn,
-                role: "user",
-              }
-            : undefined,
       });
 
       setSessionRow(nextSession);
-
-      if (userMessage) {
-        setMessages((current) => [...current, userMessage]);
-      }
 
       const structured = await chat.sendInitial({
         energyLevel,
@@ -917,6 +959,7 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     steps,
     streamingTranscriptRow,
     stuckOnInput,
+    threadItems,
     transcriptRows,
   };
 }

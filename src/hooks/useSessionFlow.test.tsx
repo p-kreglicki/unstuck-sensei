@@ -1,6 +1,10 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { useSessionFlow } from "./useSessionFlow";
-import type { SessionRow, SessionTimerBlockRow } from "../lib/session-records";
+import type {
+  ConversationMessageRow,
+  SessionRow,
+  SessionTimerBlockRow,
+} from "../lib/session-records";
 
 const {
   checkInTimerSessionMock,
@@ -125,6 +129,19 @@ function createChatState() {
   };
 }
 
+function createConversationMessageRow(
+  overrides: Partial<ConversationMessageRow> = {},
+): ConversationMessageRow {
+  return {
+    content: "Ship the first build",
+    created_at: "2026-03-17T10:01:00.000Z",
+    id: "message-1",
+    role: "user",
+    session_id: "session-1",
+    ...overrides,
+  };
+}
+
 const idleTimerState = {
   currentBlockId: null,
   durationSecs: null,
@@ -202,7 +219,77 @@ describe("useSessionFlow", () => {
     vi.clearAllMocks();
   });
 
-  it("starts the draft update and first user message insert together before generating steps", async () => {
+  it("persists the opening user message when saving a new draft", async () => {
+    const createdSession = createSessionRow({
+      id: "session-2",
+    });
+
+    createSessionDraftMock.mockResolvedValue(createdSession);
+    insertConversationMessageMock.mockResolvedValue(
+      createConversationMessageRow({
+        session_id: "session-2",
+      }),
+    );
+
+    const { result } = renderHook(() => useSessionFlow({ locationState: null }));
+
+    await waitFor(() => {
+      expect(result.current.isBooting).toBe(false);
+    });
+
+    act(() => {
+      result.current.setStuckOnInput("Ship the first build");
+    });
+
+    await act(async () => {
+      await result.current.handleSaveStuckTask();
+    });
+
+    expect(createSessionDraftMock).toHaveBeenCalledWith({
+      source: "manual",
+      stuckOn: "Ship the first build",
+      userId: "user-1",
+    });
+    expect(insertConversationMessageMock).toHaveBeenCalledWith({
+      content: "Ship the first build",
+      role: "user",
+      sessionId: "session-2",
+    });
+    expect(result.current.currentStage).toBe("energy");
+    expect(result.current.transcriptRows).toEqual([
+      {
+        content: "Ship the first build",
+        id: "message-1",
+        role: "user",
+      },
+    ]);
+  });
+
+  it("does not insert a duplicate opening user message when resuming a draft", async () => {
+    const activeSession = createSessionRow();
+
+    loadActiveSessionDraftMock.mockResolvedValue(activeSession);
+    loadConversationMessagesMock.mockResolvedValue([createConversationMessageRow()]);
+    updateSessionDraftMock.mockResolvedValue(activeSession);
+
+    const { result } = renderHook(() => useSessionFlow({ locationState: null }));
+
+    await waitFor(() => {
+      expect(result.current.isBooting).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.handleSaveStuckTask();
+    });
+
+    expect(updateSessionDraftMock).toHaveBeenCalledWith("session-1", {
+      source: "manual",
+      stuck_on: "Ship the first build",
+    });
+    expect(insertConversationMessageMock).not.toHaveBeenCalled();
+  });
+
+  it("updates energy before generating steps without re-inserting the opening turn", async () => {
     const activeSession = createSessionRow();
     const updatedSession = createSessionRow({ energy_level: "medium" });
     const finalSession = createSessionRow({
@@ -227,21 +314,13 @@ describe("useSessionFlow", () => {
     updateSessionDraftMock
       .mockImplementationOnce(() => updateDeferred.promise)
       .mockResolvedValueOnce(finalSession);
-    insertConversationMessageMock
-      .mockResolvedValueOnce({
-        content: "Ship the first build",
-        created_at: "2026-03-17T10:01:00.000Z",
-        id: "message-1",
-        role: "user",
-        session_id: "session-1",
-      })
-      .mockResolvedValueOnce({
+    insertConversationMessageMock.mockResolvedValueOnce(
+      createConversationMessageRow({
         content: "Let’s keep this tiny.",
-        created_at: "2026-03-17T10:02:00.000Z",
         id: "message-2",
         role: "assistant",
-        session_id: "session-1",
-      });
+      }),
+    );
 
     const { result } = renderHook(() => useSessionFlow({ locationState: null }));
 
@@ -268,12 +347,8 @@ describe("useSessionFlow", () => {
       expect(updateSessionDraftMock).toHaveBeenNthCalledWith(1, "session-1", {
         energy_level: "medium",
       });
-      expect(insertConversationMessageMock).toHaveBeenNthCalledWith(1, {
-        content: "Ship the first build",
-        role: "user",
-        sessionId: "session-1",
-      });
     });
+    expect(insertConversationMessageMock).not.toHaveBeenCalled();
     expect(sendInitialMock).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -285,6 +360,12 @@ describe("useSessionFlow", () => {
       energyLevel: "medium",
       source: "manual",
       stuckOn: "Ship the first build",
+    });
+    expect(insertConversationMessageMock).toHaveBeenCalledTimes(1);
+    expect(insertConversationMessageMock).toHaveBeenCalledWith({
+      content: "Let’s keep this tiny.",
+      role: "assistant",
+      sessionId: "session-1",
     });
   });
 
