@@ -204,6 +204,44 @@ async function main() {
     }
   });
 
+  await expectPass("user A can consume delete-account rate limit via RPC", async () => {
+    const { data, error } = await userA.client.rpc(
+      "consume_delete_account_rate_limit",
+      {},
+    );
+    if (error) {
+      throw error;
+    }
+    if (data?.status !== "allowed") {
+      throw new Error(
+        `Expected allowed from consume_delete_account_rate_limit, received ${JSON.stringify(data)}`,
+      );
+    }
+  });
+
+  await expectPass("user A cannot read delete-account logs directly", async () => {
+    const { data, error } = await userA.client
+      .from("account_delete_request_logs")
+      .select("*")
+      .eq("user_id", userA.user.id);
+    if (error) {
+      throw error;
+    }
+    if ((data ?? []).length !== 0) {
+      throw new Error("User A was able to read account delete logs directly");
+    }
+  });
+
+  await expectFailure("user A cannot insert delete-account logs directly", async () => {
+    const { error } = await userA.client
+      .from("account_delete_request_logs")
+      .insert({ user_id: userA.user.id });
+    if (!error) {
+      return;
+    }
+    throw error;
+  });
+
   console.log("RLS verification completed successfully.");
   console.log(
     "Note: temporary test users remain in Auth unless you delete them manually in the Supabase dashboard.",

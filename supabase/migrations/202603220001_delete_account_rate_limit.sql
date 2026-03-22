@@ -1,8 +1,10 @@
 CREATE TABLE IF NOT EXISTS public.account_delete_request_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.account_delete_request_logs ENABLE ROW LEVEL SECURITY;
 
 CREATE INDEX IF NOT EXISTS account_delete_request_logs_user_created_idx
   ON public.account_delete_request_logs (user_id, created_at DESC);
