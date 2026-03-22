@@ -122,6 +122,16 @@ describe("chat route helpers", () => {
     expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 
+  it("supports Vercel invoking the default export directly", async () => {
+    const response = await chatRoute(
+      new Request("https://example.com/api/chat", {
+        method: "OPTIONS",
+      }),
+    );
+
+    expect(response.status).toBe(204);
+  });
+
   it("includes the allowlisted origin on error responses", async () => {
     const response = await handleChatRequest(
       new Request("https://example.com/api/chat", {

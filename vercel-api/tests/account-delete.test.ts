@@ -45,6 +45,16 @@ describe("account delete route", () => {
     expect(response.status).toBe(405);
   });
 
+  it("supports Vercel invoking the default export directly", async () => {
+    const response = await accountDeleteRoute(
+      new Request("https://example.com/api/account/delete", {
+        method: "OPTIONS",
+      }),
+    );
+
+    expect(response.status).toBe(204);
+  });
+
   it("returns 401 when the bearer token does not map to a user", async () => {
     createClientMock.mockReturnValueOnce({
       auth: {

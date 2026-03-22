@@ -106,31 +106,33 @@ type ChatError = Error & {
 
 export const runtime = "nodejs";
 
-export default {
-  async fetch(request: Request) {
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        headers: corsHeaders(request),
-        status: 204,
-      });
-    }
+async function routeHandler(request: Request) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      headers: corsHeaders(request),
+      status: 204,
+    });
+  }
 
-    if (request.method !== "POST") {
-      return jsonResponse(
-        { error: "Method not allowed." },
-        request,
-        {
-          headers: {
-            Allow: "OPTIONS, POST",
-          },
-          status: 405,
+  if (request.method !== "POST") {
+    return jsonResponse(
+      { error: "Method not allowed." },
+      request,
+      {
+        headers: {
+          Allow: "OPTIONS, POST",
         },
-      );
-    }
+        status: 405,
+      },
+    );
+  }
 
-    return handleChatRequest(request);
-  },
-};
+  return handleChatRequest(request);
+}
+
+export default Object.assign(routeHandler, {
+  fetch: routeHandler,
+});
 
 export async function handleChatRequest(request: Request) {
   const environment = getRequiredEnvironment(request);
