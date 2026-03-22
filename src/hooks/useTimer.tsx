@@ -149,7 +149,7 @@ function isSameTimerContextState(left: TimerState, right: TimerState) {
 }
 
 export function TimerProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { isAccountDeletionInProgress, user } = useAuth();
   const [state, setState] = useState<TimerState>(defaultTimerContextState);
   const [remainingSecs, setRemainingSecs] = useState<number | null>(null);
   const stateRef = useRef(defaultTimerState);
@@ -398,7 +398,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   ]);
 
   const replayPendingSyncsPass = useCallback(async () => {
-    if (!isTauri() || !user?.id) {
+    if (!isTauri() || !user?.id || isAccountDeletionInProgress) {
       return;
     }
 
@@ -535,6 +535,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     clearRuntime,
     getPendingSyncs,
     hydrateAwaitingCheckin,
+    isAccountDeletionInProgress,
     refreshStatus,
     user?.id,
   ]);
@@ -608,7 +609,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   }, [applyState, refreshStatus, replayPendingSyncs]);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.id || isAccountDeletionInProgress) {
       applyState(defaultTimerState);
       return;
     }
@@ -616,7 +617,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     void replayPendingSyncs().catch((error) => {
       logTimerError("failed to replay pending timer syncs after auth", error);
     });
-  }, [applyState, replayPendingSyncs, user?.id]);
+  }, [applyState, isAccountDeletionInProgress, replayPendingSyncs, user?.id]);
 
   const value = useMemo<TimerContextValue>(
     () => ({

@@ -18,11 +18,15 @@ function toAuthError(error: unknown, fallbackMessage: string): Error {
 }
 
 type AuthContextValue = {
+  cancelAccountDeletion(): void;
+  finishAccountDeletion(): void;
   isLoading: boolean;
+  isAccountDeletionInProgress: boolean;
   session: Session | null;
   signIn(email: string, password: string): Promise<AuthResult>;
   signOut(): Promise<AuthResult>;
   signUp(email: string, password: string): Promise<AuthResult>;
+  startAccountDeletion(): void;
   user: User | null;
 };
 
@@ -31,6 +35,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAccountDeletionInProgress, setIsAccountDeletionInProgress] = useState(false);
   const user = session?.user ?? null;
 
   useEffect(() => {
@@ -62,6 +67,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setSession(nextSession);
+      if (!nextSession) {
+        setIsAccountDeletionInProgress(false);
+      }
       setIsLoading(false);
     });
 
@@ -77,6 +85,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Autostart is helpful but not required for auth to succeed.
     }
+  }
+
+  function startAccountDeletion() {
+    setIsAccountDeletionInProgress(true);
+  }
+
+  function cancelAccountDeletion() {
+    setIsAccountDeletionInProgress(false);
+  }
+
+  function finishAccountDeletion() {
+    setSession(null);
+    setIsAccountDeletionInProgress(false);
+    setIsLoading(false);
   }
 
   async function signIn(email: string, password: string): Promise<AuthResult> {
@@ -145,11 +167,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
+        cancelAccountDeletion,
+        finishAccountDeletion,
         isLoading,
+        isAccountDeletionInProgress,
         session,
         signIn,
         signOut,
         signUp,
+        startAccountDeletion,
         user,
       }}
     >

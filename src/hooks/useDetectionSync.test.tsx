@@ -55,6 +55,7 @@ describe("DetectionSyncBridge", () => {
 
   it("syncs a signed-out state without querying Supabase", async () => {
     useAuthMock.mockReturnValue({
+      isAccountDeletionInProgress: false,
       session: null,
     });
     syncConfigMock.mockResolvedValue(undefined);
@@ -74,6 +75,7 @@ describe("DetectionSyncBridge", () => {
 
   it("loads the persisted detection config for signed-in users", async () => {
     useAuthMock.mockReturnValue({
+      isAccountDeletionInProgress: false,
       session: {
         user: {
           id: "user-1",
@@ -104,6 +106,7 @@ describe("DetectionSyncBridge", () => {
 
   it("falls back to defaults when the profile row is missing", async () => {
     useAuthMock.mockReturnValue({
+      isAccountDeletionInProgress: false,
       session: {
         user: {
           id: "user-1",
@@ -133,6 +136,7 @@ describe("DetectionSyncBridge", () => {
       .mockImplementation(() => undefined);
 
     useAuthMock.mockReturnValue({
+      isAccountDeletionInProgress: false,
       session: {
         user: {
           id: "user-1",
@@ -156,5 +160,29 @@ describe("DetectionSyncBridge", () => {
     expect(syncConfigMock).not.toHaveBeenCalled();
 
     consoleWarnSpy.mockRestore();
+  });
+
+  it("treats account deletion in progress as signed out for detection sync", async () => {
+    useAuthMock.mockReturnValue({
+      isAccountDeletionInProgress: true,
+      session: {
+        user: {
+          id: "user-1",
+        },
+      },
+    });
+    syncConfigMock.mockResolvedValue(undefined);
+
+    render(<DetectionSyncBridge />);
+
+    await waitFor(() => {
+      expect(syncConfigMock).toHaveBeenCalledWith({
+        signedIn: false,
+        enabled: false,
+        sensitivity: "medium",
+      });
+    });
+
+    expect(fromMock).not.toHaveBeenCalled();
   });
 });

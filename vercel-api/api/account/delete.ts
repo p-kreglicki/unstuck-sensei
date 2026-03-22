@@ -92,6 +92,16 @@ export async function handleDeleteAccountRequest(request: Request) {
     },
   );
 
+  const { error: revokeError } = await adminClient.auth.admin.signOut(token, "global");
+
+  if (revokeError) {
+    return jsonResponse(
+      { error: "Unable to delete your account right now." },
+      request,
+      { status: 500 },
+    );
+  }
+
   const { error: deleteError } = await adminClient.auth.admin.deleteUser(user.id);
 
   if (deleteError) {

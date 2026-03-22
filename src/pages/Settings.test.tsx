@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Settings } from "./Settings";
 
-const { updateProfileMock, useProfileSettingsMock, useTimerMock } = vi.hoisted(() => ({
+const {
+  changePasswordMock,
+  updateProfileMock,
+  useProfileSettingsMock,
+  useTimerMock,
+} = vi.hoisted(() => ({
+  changePasswordMock: vi.fn(),
   updateProfileMock: vi.fn(),
   useProfileSettingsMock: vi.fn(),
   useTimerMock: vi.fn(),
@@ -35,7 +41,7 @@ describe("Settings", () => {
     });
 
     useProfileSettingsMock.mockReturnValue({
-      changePassword: vi.fn(),
+      changePassword: (...args: unknown[]) => changePasswordMock(...args),
       deleteAccount: vi.fn(),
       isLoading: false,
       loadError: null,
@@ -82,6 +88,23 @@ describe("Settings", () => {
 
     expect((screen.getByLabelText("Detection enabled") as HTMLInputElement).checked).toBe(
       true,
+    );
+  });
+
+  it("blocks password changes when the new password is too short", async () => {
+    render(<Settings />);
+
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "short" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(changePasswordMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Use at least 8 characters for your password.",
     );
   });
 });

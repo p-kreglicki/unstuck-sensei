@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTimer } from "../hooks/useTimer";
 import { useProfileSettings } from "../hooks/useProfileSettings";
+import { validatePassword } from "../lib/password-policy";
 import type { ProfileSettings } from "../lib/profile-settings";
 import { PrivacyDashboard } from "../components/settings/PrivacyDashboard";
 import { privacyBoundary } from "../lib/privacy-boundary";
@@ -314,6 +315,16 @@ export function Settings() {
     if (password !== passwordConfirmation) {
       setPasswordFeedback({
         message: "The password confirmation does not match.",
+        tone: "error",
+      });
+      return;
+    }
+
+    const passwordError = validatePassword(password);
+
+    if (passwordError) {
+      setPasswordFeedback({
+        message: passwordError,
         tone: "error",
       });
       return;

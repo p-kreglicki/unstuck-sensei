@@ -71,6 +71,10 @@ describe("account delete route", () => {
   });
 
   it("deletes the verified user id and ignores request body ids", async () => {
+    const revokeRefreshTokens = vi.fn().mockResolvedValue({
+      data: null,
+      error: null,
+    });
     const deleteUser = vi.fn().mockResolvedValue({
       data: {
         user: null,
@@ -94,6 +98,7 @@ describe("account delete route", () => {
       .mockReturnValueOnce({
         auth: {
           admin: {
+            signOut: revokeRefreshTokens,
             deleteUser,
           },
         },
@@ -113,7 +118,53 @@ describe("account delete route", () => {
     );
 
     expect(response.status).toBe(204);
+    expect(revokeRefreshTokens).toHaveBeenCalledWith("token-123", "global");
     expect(deleteUser).toHaveBeenCalledWith("verified-user-id");
+    expect(revokeRefreshTokens.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteUser.mock.invocationCallOrder[0],
+    );
     expect(createClientMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns 500 when refresh-token revocation fails", async () => {
+    const revokeRefreshTokens = vi.fn().mockResolvedValue({
+      data: null,
+      error: new Error("revoke failed"),
+    });
+    const deleteUser = vi.fn();
+
+    createClientMock
+      .mockReturnValueOnce({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: {
+              user: {
+                id: "verified-user-id",
+              },
+            },
+            error: null,
+          }),
+        },
+      })
+      .mockReturnValueOnce({
+        auth: {
+          admin: {
+            signOut: revokeRefreshTokens,
+            deleteUser,
+          },
+        },
+      });
+
+    const response = await handleDeleteAccountRequest(
+      new Request("https://example.com/api/account/delete", {
+        headers: {
+          Authorization: "Bearer token-123",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(deleteUser).not.toHaveBeenCalled();
   });
 });

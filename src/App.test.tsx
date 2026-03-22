@@ -1,10 +1,12 @@
 import { MemoryRouter, Outlet, Route, Routes } from "react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import { App, AppNavigationBridge } from "./App";
+import { ProfileSettingsProvider } from "./hooks/useProfileSettings";
 
-const { listenMock, loadProfileSettingsMock, useAuthMock } = vi.hoisted(() => ({
+const { listenMock, loadProfileSettingsMock, syncConfigMock, useAuthMock } = vi.hoisted(() => ({
   listenMock: vi.fn(),
   loadProfileSettingsMock: vi.fn(),
+  syncConfigMock: vi.fn(),
   useAuthMock: vi.fn(),
 }));
 
@@ -20,10 +22,28 @@ vi.mock("./hooks/useAuth", () => ({
   useAuth: () => useAuthMock(),
 }));
 
+vi.mock("./hooks/useDetection", () => ({
+  useDetection: () => ({
+    syncConfig: syncConfigMock,
+  }),
+}));
+
 vi.mock("./lib/profile-settings", () => ({
+  hasDetectionSettingsPatch: () => false,
   hasCompletedOnboarding: (profile: { onboardingCompletedAt: string | null }) =>
     profile.onboardingCompletedAt !== null,
   loadProfileSettings: (...args: unknown[]) => loadProfileSettingsMock(...args),
+  resolveLocalTimeZone: () => "Europe/Rome",
+  saveProfileSettings: vi.fn(),
+}));
+
+vi.mock("./lib/supabase", () => ({
+  supabase: {
+    auth: {
+      signOut: vi.fn(),
+      updateUser: vi.fn(),
+    },
+  },
 }));
 
 vi.mock("./components/Layout", () => ({
@@ -68,17 +88,31 @@ describe("App routing", () => {
     vi.clearAllMocks();
 
     useAuthMock.mockReturnValue({
+      cancelAccountDeletion: vi.fn(),
+      finishAccountDeletion: vi.fn(),
+      isAccountDeletionInProgress: false,
       isLoading: false,
       session: {
         user: {
           id: "user-1",
         },
       },
+      startAccountDeletion: vi.fn(),
       user: {
         id: "user-1",
       },
     });
   });
+
+  function renderApp(initialEntries: string[]) {
+    return render(
+      <ProfileSettingsProvider>
+        <MemoryRouter initialEntries={initialEntries}>
+          <App />
+        </MemoryRouter>
+      </ProfileSettingsProvider>,
+    );
+  }
 
   it("routes tray navigation events into the settings page", async () => {
     let handler:
@@ -125,11 +159,7 @@ describe("App routing", () => {
       onboardingCompletedAt: null,
     });
 
-    render(
-      <MemoryRouter initialEntries={["/history"]}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp(["/history"]);
 
     await waitFor(() => {
       expect(screen.getByText("Onboarding page")).toBeInTheDocument();
@@ -143,11 +173,7 @@ describe("App routing", () => {
       onboardingCompletedAt: null,
     });
 
-    render(
-      <MemoryRouter initialEntries={["/onboarding"]}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp(["/onboarding"]);
 
     await waitFor(() => {
       expect(screen.getByText("Onboarding page")).toBeInTheDocument();
@@ -159,11 +185,7 @@ describe("App routing", () => {
       onboardingCompletedAt: "2026-03-21T12:00:00.000Z",
     });
 
-    render(
-      <MemoryRouter initialEntries={["/history/session-123"]}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp(["/history/session-123"]);
 
     await waitFor(() => {
       expect(screen.getByText("Session detail page")).toBeInTheDocument();
@@ -175,11 +197,7 @@ describe("App routing", () => {
       onboardingCompletedAt: "2026-03-21T12:00:00.000Z",
     });
 
-    render(
-      <MemoryRouter initialEntries={["/onboarding"]}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp(["/onboarding"]);
 
     await waitFor(() => {
       expect(screen.getByText("Session page")).toBeInTheDocument();

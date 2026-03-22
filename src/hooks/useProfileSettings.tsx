@@ -1,4 +1,10 @@
-import { useEffect, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { createDisplayError, toDisplayError } from "../lib/errors";
 import {
   hasDetectionSettingsPatch,
@@ -23,6 +29,26 @@ type MutationResult = {
   profile: ProfileSettings | null;
   warning: string | null;
 };
+
+type ProfileSettingsContextValue = {
+  changePassword(newPassword: string): Promise<{ error: Error | null }>;
+  completeOnboarding(input: {
+    detectionSensitivity: DetectionSensitivity;
+    preferredTime: string;
+  }): Promise<MutationResult>;
+  deleteAccount(): Promise<{ error: Error | null }>;
+  isLoading: boolean;
+  loadError: string | null;
+  profile: ProfileSettings | null;
+  reload(): Promise<void>;
+  resolveLocalTimeZone(): string;
+  updateProfile(
+    patch: ProfileSettingsPatch,
+    options: MutationOptions,
+  ): Promise<MutationResult>;
+};
+
+const ProfileSettingsContext = createContext<ProfileSettingsContextValue | null>(null);
 
 function joinUrl(baseUrl: string, path: string) {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
@@ -55,8 +81,15 @@ function toNetworkMessage(error: unknown, fallbackMessage: string) {
   return toDisplayError(error, fallbackMessage);
 }
 
-export function useProfileSettings() {
-  const { session, user } = useAuth();
+function useProvideProfileSettings(): ProfileSettingsContextValue {
+  const {
+    cancelAccountDeletion,
+    finishAccountDeletion,
+    isAccountDeletionInProgress,
+    session,
+    startAccountDeletion,
+    user,
+  } = useAuth();
   const { syncConfig } = useDetection();
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -69,6 +102,14 @@ export function useProfileSettings() {
       if (!user?.id) {
         if (active) {
           setProfile(null);
+          setLoadError(null);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      if (isAccountDeletionInProgress) {
+        if (active) {
           setLoadError(null);
           setIsLoading(false);
         }
@@ -106,10 +147,10 @@ export function useProfileSettings() {
     return () => {
       active = false;
     };
-  }, [user?.id]);
+  }, [isAccountDeletionInProgress, user?.id]);
 
   async function reload() {
-    if (!user?.id) {
+    if (!user?.id || isAccountDeletionInProgress) {
       return;
     }
 
@@ -130,6 +171,14 @@ export function useProfileSettings() {
     patch: ProfileSettingsPatch,
     options: MutationOptions,
   ): Promise<MutationResult> {
+    if (isAccountDeletionInProgress) {
+      return {
+        error: createDisplayError("Account deletion is in progress."),
+        profile,
+        warning: null,
+      };
+    }
+
     if (!user?.id) {
       return {
         error: createDisplayError("Sign in again and retry."),
@@ -206,6 +255,12 @@ export function useProfileSettings() {
   }
 
   async function changePassword(newPassword: string) {
+    if (isAccountDeletionInProgress) {
+      return {
+        error: createDisplayError("Account deletion is in progress."),
+      };
+    }
+
     try {
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
@@ -226,6 +281,12 @@ export function useProfileSettings() {
   }
 
   async function deleteAccount() {
+    if (isAccountDeletionInProgress) {
+      return {
+        error: createDisplayError("Account deletion is already in progress."),
+      };
+    }
+
     const baseUrl = import.meta.env.VITE_VERCEL_API_URL?.trim();
 
     if (!baseUrl) {
@@ -241,6 +302,8 @@ export function useProfileSettings() {
     }
 
     try {
+      startAccountDeletion();
+
       const response = await fetch(joinUrl(baseUrl, "/api/account/delete"), {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -250,19 +313,31 @@ export function useProfileSettings() {
       });
 
       if (!response.ok) {
+        cancelAccountDeletion();
         return {
           error: createDisplayError(await readApiError(response)),
         };
       }
 
-      const { error } = await supabase.auth.signOut({ scope: "local" });
+      try {
+        const { error } = await supabase.auth.signOut({ scope: "local" });
+
+        if (error && import.meta.env.DEV) {
+          console.warn("[auth] local sign-out failed after account deletion:", error);
+        }
+      } catch (error) {
+        if (import.meta.env.DEV) {
+          console.warn("[auth] local sign-out threw after account deletion:", error);
+        }
+      } finally {
+        finishAccountDeletion();
+      }
 
       return {
-        error: error
-          ? createDisplayError(error.message)
-          : null,
+        error: null,
       };
     } catch (error) {
+      cancelAccountDeletion();
       return {
         error: createDisplayError(
           toNetworkMessage(error, "Unable to delete your account right now."),
@@ -282,4 +357,24 @@ export function useProfileSettings() {
     resolveLocalTimeZone,
     updateProfile,
   };
+}
+
+export function ProfileSettingsProvider({ children }: { children: ReactNode }) {
+  const value = useProvideProfileSettings();
+
+  return (
+    <ProfileSettingsContext.Provider value={value}>
+      {children}
+    </ProfileSettingsContext.Provider>
+  );
+}
+
+export function useProfileSettings() {
+  const value = useContext(ProfileSettingsContext);
+
+  if (!value) {
+    throw new Error("useProfileSettings must be used within a ProfileSettingsProvider.");
+  }
+
+  return value;
 }

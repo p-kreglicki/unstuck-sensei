@@ -95,6 +95,7 @@ describe("TimerProvider", () => {
 
     isTauriMock.mockReturnValue(true);
     useAuthMock.mockReturnValue({
+      isAccountDeletionInProgress: false,
       user: {
         id: "user-1",
       },
@@ -196,6 +197,29 @@ describe("TimerProvider", () => {
         syncIds: ["sync-2"],
       });
     });
+  });
+
+  it("skips pending-sync replay while account deletion is in progress", async () => {
+    useAuthMock.mockReturnValue({
+      isAccountDeletionInProgress: true,
+      user: {
+        id: "user-1",
+      },
+    });
+
+    render(
+      <TimerProvider>
+        <div>timer</div>
+      </TimerProvider>,
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+
+    expect(loadActiveTimerSessionMock).not.toHaveBeenCalled();
+    expect(loadLatestTimerBlockMock).not.toHaveBeenCalled();
   });
 
   it("reuses the replay-owned timer refresh path on window focus", async () => {

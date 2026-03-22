@@ -1,17 +1,27 @@
+import type { ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { useProfileSettings } from "./useProfileSettings";
+import {
+  ProfileSettingsProvider,
+  useProfileSettings,
+} from "./useProfileSettings";
 
 const {
+  cancelAccountDeletionMock,
+  finishAccountDeletionMock,
   loadProfileSettingsMock,
   saveProfileSettingsMock,
   signOutMock,
+  startAccountDeletionMock,
   supabaseUpdateUserMock,
   syncConfigMock,
   useAuthMock,
 } = vi.hoisted(() => ({
+  cancelAccountDeletionMock: vi.fn(),
+  finishAccountDeletionMock: vi.fn(),
   loadProfileSettingsMock: vi.fn(),
   saveProfileSettingsMock: vi.fn(),
   signOutMock: vi.fn(),
+  startAccountDeletionMock: vi.fn(),
   supabaseUpdateUserMock: vi.fn(),
   syncConfigMock: vi.fn(),
   useAuthMock: vi.fn(),
@@ -55,13 +65,22 @@ describe("useProfileSettings", () => {
     timezone: "Europe/Rome",
   };
 
+  function wrapper({ children }: { children: ReactNode }) {
+    return <ProfileSettingsProvider>{children}</ProfileSettingsProvider>;
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn());
 
     useAuthMock.mockReturnValue({
+      cancelAccountDeletion: (...args: unknown[]) => cancelAccountDeletionMock(...args),
+      finishAccountDeletion: (...args: unknown[]) => finishAccountDeletionMock(...args),
+      isAccountDeletionInProgress: false,
       session: {
         access_token: "token-123",
       },
+      startAccountDeletion: (...args: unknown[]) => startAccountDeletionMock(...args),
       user: {
         id: "user-1",
       },
@@ -77,6 +96,10 @@ describe("useProfileSettings", () => {
     syncConfigMock.mockResolvedValue(undefined);
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("rolls back optimistic profile changes when persistence fails", async () => {
     let rejectSave!: (error: Error) => void;
 
@@ -86,7 +109,7 @@ describe("useProfileSettings", () => {
       }),
     );
 
-    const { result } = renderHook(() => useProfileSettings());
+    const { result } = renderHook(() => useProfileSettings(), { wrapper });
 
     await waitFor(() => {
       expect(result.current.profile?.detectionEnabled).toBe(true);
@@ -124,7 +147,7 @@ describe("useProfileSettings", () => {
       detectionSensitivity: "high",
     });
 
-    const { result } = renderHook(() => useProfileSettings());
+    const { result } = renderHook(() => useProfileSettings(), { wrapper });
 
     await waitFor(() => {
       expect(result.current.profile?.detectionEnabled).toBe(true);
@@ -147,5 +170,57 @@ describe("useProfileSettings", () => {
       sensitivity: "high",
       signedIn: true,
     });
+  });
+
+  it("clears local auth state even when local sign-out fails after account deletion", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(null, {
+        status: 204,
+      }),
+    );
+    signOutMock.mockResolvedValue({
+      error: new Error("local sign-out failed"),
+    });
+
+    const { result } = renderHook(() => useProfileSettings(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.profile?.displayName).toBe("Founder");
+    });
+
+    await act(async () => {
+      await result.current.deleteAccount();
+    });
+
+    expect(startAccountDeletionMock).toHaveBeenCalledTimes(1);
+    expect(signOutMock).toHaveBeenCalledWith({ scope: "local" });
+    expect(finishAccountDeletionMock).toHaveBeenCalledTimes(1);
+    expect(cancelAccountDeletionMock).not.toHaveBeenCalled();
+  });
+
+  it("cancels the deletion guard when the delete request fails", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ error: "delete failed" }), {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        status: 500,
+      }),
+    );
+
+    const { result } = renderHook(() => useProfileSettings(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.profile?.displayName).toBe("Founder");
+    });
+
+    await act(async () => {
+      const response = await result.current.deleteAccount();
+      expect(response.error?.message).toBe("delete failed");
+    });
+
+    expect(startAccountDeletionMock).toHaveBeenCalledTimes(1);
+    expect(cancelAccountDeletionMock).toHaveBeenCalledTimes(1);
+    expect(finishAccountDeletionMock).not.toHaveBeenCalled();
   });
 });
