@@ -1,7 +1,7 @@
 ---
 title: "feat: Phase 5 History, Settings, and Privacy"
 type: feat
-status: active
+status: completed
 date: 2026-03-21
 origin: docs/brainstorms/2026-03-12-unstuck-sensei-mvp-brainstorm.md
 ---
@@ -479,15 +479,15 @@ Phase 5A and 5B are largely independent and can be built in parallel if the work
 Goal: establish a durable first-run contract and collect the data later phases depend on.
 
 Tasks:
-- [ ] Add `supabase/migrations/202603210003_phase5_onboarding_completion.sql`
-- [ ] Add `src/lib/profile-settings.ts`
-- [ ] Add `src/hooks/useProfileSettings.ts`
-- [ ] Add `src/pages/Onboarding.tsx`
-- [ ] Add `src/components/OnboardingGate.tsx`
-- [ ] Update `src/App.tsx` routing to include `/onboarding`
-- [ ] Add a focused onboarding shell if needed, for example `src/components/OnboardingShell.tsx`
-- [ ] Persist `preferred_time`, `timezone`, `detection_sensitivity`, and `onboarding_completed_at` together
-- [ ] Ensure shell routes and `Session` do not mount before onboarding gate resolution
+- [x] Add `supabase/migrations/202603210003_phase5_onboarding_completion.sql`
+- [x] Add `src/lib/profile-settings.ts`
+- [x] Add `src/hooks/useProfileSettings.ts`
+- [x] Add `src/pages/Onboarding.tsx`
+- [x] Add `src/components/OnboardingGate.tsx`
+- [x] Update `src/App.tsx` routing to include `/onboarding`
+- [x] Add a focused onboarding shell if needed, for example `src/components/OnboardingShell.tsx`
+- [x] Persist `preferred_time`, `timezone`, `detection_sensitivity`, and `onboarding_completed_at` together
+- [x] Ensure shell routes and `Session` do not mount before onboarding gate resolution
 
 Success criteria:
 - authenticated users with no onboarding marker are routed to onboarding exactly once
@@ -498,14 +498,14 @@ Success criteria:
 Goal: let users review finished work without interfering with active session recovery.
 
 Tasks:
-- [ ] Extend `src/lib/session-records.ts` with `loadSessionHistoryPage` and resilient `loadSessionDetail`
-- [ ] Add `src/pages/History.tsx`
-- [ ] Add `src/pages/SessionDetail.tsx`
-- [ ] Add any supporting components, for example `src/components/history/HistoryListItem.tsx`
-- [ ] Add route support for `/history/:sessionId`
-- [ ] Add infinite-scroll history loading backed by cursor pagination
-- [ ] Render timer blocks and transcript from durable tables
-- [ ] Add section-level fallback UI for partial detail-query failures
+- [x] Extend `src/lib/session-records.ts` with `loadSessionHistoryPage` and resilient `loadSessionDetail`
+- [x] Add `src/pages/History.tsx`
+- [x] Add `src/pages/SessionDetail.tsx`
+- [x] Add any supporting components, for example `src/components/history/HistoryListItem.tsx`
+- [x] Add route support for `/history/:sessionId`
+- [x] Add infinite-scroll history loading backed by cursor pagination
+- [x] Render timer blocks and transcript from durable tables
+- [x] Add section-level fallback UI for partial detail-query failures
 
 Success criteria:
 - history shows real completed/incomplete sessions, never live drafts
@@ -516,15 +516,15 @@ Success criteria:
 Goal: give users direct control over detection/email/account preferences and explain the privacy boundary clearly.
 
 Tasks:
-- [ ] Add `src/pages/Settings.tsx`
-- [ ] Add `src/components/settings/PrivacyDashboard.tsx`
-- [ ] Add `src/lib/privacy-boundary.ts`
-- [ ] Add a password update form in `src/pages/Settings.tsx` or a focused child component
-- [ ] Add `vercel-api/api/account/delete.ts`
-- [ ] Add `vercel-api/tests/account-delete.test.ts`
-- [ ] Ensure profile mutations update both Supabase and Rust detection runtime where applicable
-- [ ] Add explicit offline/save-failure behavior for settings mutations
-- [ ] Add a lightweight guardrail that keeps onboarding and settings privacy copy sourced from the same module
+- [x] Add `src/pages/Settings.tsx`
+- [x] Add `src/components/settings/PrivacyDashboard.tsx`
+- [x] Add `src/lib/privacy-boundary.ts`
+- [x] Add a password update form in `src/pages/Settings.tsx` or a focused child component
+- [x] Add `vercel-api/api/account/delete.ts`
+- [x] Add `vercel-api/tests/account-delete.test.ts`
+- [x] Ensure profile mutations update both Supabase and Rust detection runtime where applicable
+- [x] Add explicit offline/save-failure behavior for settings mutations
+- [x] Add a lightweight guardrail that keeps onboarding and settings privacy copy sourced from the same module
 
 Success criteria:
 - settings persist and survive relaunch
@@ -536,13 +536,13 @@ Success criteria:
 Goal: prove the new flows work without regressing the existing session/timer experience.
 
 Tasks:
-- [ ] Update routing tests in `src/App.test.tsx`
-- [ ] Add `src/pages/History.test.tsx`
-- [ ] Add `src/pages/SessionDetail.test.tsx`
-- [ ] Add `src/pages/Settings.test.tsx`
-- [ ] Add `src/pages/Onboarding.test.tsx`
-- [ ] Add `src/hooks/useProfileSettings.test.tsx`
-- [ ] Add manual verification notes for sign-up -> onboarding -> session and settings -> runtime sync
+- [x] Update routing tests in `src/App.test.tsx`
+- [x] Add `src/pages/History.test.tsx`
+- [x] Add `src/pages/SessionDetail.test.tsx`
+- [x] Add `src/pages/Settings.test.tsx`
+- [x] Add `src/pages/Onboarding.test.tsx`
+- [x] Add `src/hooks/useProfileSettings.test.tsx`
+- [x] Add manual verification notes for sign-up -> onboarding -> session and settings -> runtime sync
 
 Success criteria:
 - the session route still boots active draft / active timer state correctly
@@ -552,37 +552,37 @@ Success criteria:
 
 ### Functional Requirements
 
-- [ ] Users with `profiles.onboarding_completed_at IS NULL` are routed to `/onboarding` before the normal shell.
-- [ ] Onboarding persists `preferred_time`, `timezone`, `detection_sensitivity`, and `onboarding_completed_at` in one successful profile mutation.
-- [ ] `History` shows completed and incomplete sessions only, newest first, with infinite-scroll UX backed by incremental cursor pagination rather than an unbounded fetch.
-- [ ] Each history row displays date/time, task summary, energy, feedback, and source.
-- [ ] Clicking a history row opens a detail screen with stored steps, transcript, timer blocks, source, and feedback.
-- [ ] `SessionDetail` still renders available sections when one of its backing queries fails.
-- [ ] `Settings` lets the user update detection settings, email settings, and display name.
-- [ ] Detection-setting changes take effect in runtime behavior without requiring app relaunch.
-- [ ] Detection-setting changes made during an active timer block persist immediately but do not override timer suppression until the timer resolves.
-- [ ] `Settings` exposes password change for the signed-in user.
-- [ ] Privacy UI clearly distinguishes tracked locally, sent to the server, and never collected data.
-- [ ] Delete account permanently removes the auth user and signs the desktop app out locally right away.
+- [x] Users with `profiles.onboarding_completed_at IS NULL` are routed to `/onboarding` before the normal shell.
+- [x] Onboarding persists `preferred_time`, `timezone`, `detection_sensitivity`, and `onboarding_completed_at` in one successful profile mutation.
+- [x] `History` shows completed and incomplete sessions only, newest first, with infinite-scroll UX backed by incremental cursor pagination rather than an unbounded fetch.
+- [x] Each history row displays date/time, task summary, energy, feedback, and source.
+- [x] Clicking a history row opens a detail screen with stored steps, transcript, timer blocks, source, and feedback.
+- [x] `SessionDetail` still renders available sections when one of its backing queries fails.
+- [x] `Settings` lets the user update detection settings, email settings, and display name.
+- [x] Detection-setting changes take effect in runtime behavior without requiring app relaunch.
+- [x] Detection-setting changes made during an active timer block persist immediately but do not override timer suppression until the timer resolves.
+- [x] `Settings` exposes password change for the signed-in user.
+- [x] Privacy UI clearly distinguishes tracked locally, sent to the server, and never collected data.
+- [x] Delete account permanently removes the auth user and signs the desktop app out locally right away.
 
 ### Non-Functional Requirements
 
-- [ ] Security-critical account deletion remains server-side; no service role key or equivalent admin authority ships in the desktop client.
-- [ ] Reads and writes from the desktop client continue to rely on Supabase RLS for user data boundaries.
-- [ ] Privacy copy remains accurate to implemented behavior and avoids claiming telemetry that does not exist.
-- [ ] History, settings, and onboarding pages provide explicit loading, empty, and error states.
-- [ ] Offline and network-loss behavior is explicitly defined for onboarding, settings saves, and history/detail reads.
+- [x] Security-critical account deletion remains server-side; no service role key or equivalent admin authority ships in the desktop client.
+- [x] Reads and writes from the desktop client continue to rely on Supabase RLS for user data boundaries.
+- [x] Privacy copy remains accurate to implemented behavior and avoids claiming telemetry that does not exist.
+- [x] History, settings, and onboarding pages provide explicit loading, empty, and error states.
+- [x] Offline and network-loss behavior is explicitly defined for onboarding, settings saves, and history/detail reads.
 
 ### Quality Gates
 
-- [ ] Route tests cover onboarding gating and history/detail navigation.
-- [ ] Route tests cover both onboarding incomplete and onboarding complete visits to `/onboarding`, including no redirect loop for the incomplete case.
-- [ ] Settings tests cover optimistic save rollback on failure.
-- [ ] Account deletion API tests verify JWT-derived identity and reject unauthenticated calls.
-- [ ] History tests cover paginated loading and infinite-scroll triggering behavior.
-- [ ] Detail tests cover section-level degradation when one backing query fails.
-- [ ] Privacy-boundary tests or import assertions prove both onboarding and `PrivacyDashboard` read from the shared module.
-- [ ] No Phase 5 change breaks active-session recovery from `useSessionFlow`.
+- [x] Route tests cover onboarding gating and history/detail navigation.
+- [x] Route tests cover both onboarding incomplete and onboarding complete visits to `/onboarding`, including no redirect loop for the incomplete case.
+- [x] Settings tests cover optimistic save rollback on failure.
+- [x] Account deletion API tests verify JWT-derived identity and reject unauthenticated calls.
+- [x] History tests cover paginated loading and infinite-scroll triggering behavior.
+- [x] Detail tests cover section-level degradation when one backing query fails.
+- [x] Privacy-boundary tests or import assertions prove both onboarding and `PrivacyDashboard` read from the shared module.
+- [x] No Phase 5 change breaks active-session recovery from `useSessionFlow`.
 
 ## Dependencies & Risks
 

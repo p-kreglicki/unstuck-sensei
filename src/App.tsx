@@ -3,10 +3,14 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { Route, Routes, useNavigate } from "react-router";
 import { Layout } from "./components/Layout";
+import { OnboardingGate } from "./components/OnboardingGate";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { History } from "./pages/History";
 import { Login } from "./pages/Login";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { Onboarding } from "./pages/Onboarding";
 import { Session } from "./pages/Session";
+import { SessionDetail } from "./pages/SessionDetail";
+import { Settings } from "./pages/Settings";
 
 type AppNavigatePayload = {
   source?: "detection" | "tray";
@@ -57,29 +61,17 @@ export function App() {
         <Route
           element={
             <ProtectedRoute>
-              <Layout />
+              <OnboardingGate />
             </ProtectedRoute>
           }
         >
-          <Route path="/" element={<Session />} />
-          <Route
-            path="/history"
-            element={
-              <PlaceholderPage
-                title="History"
-                description="Session history arrives in Phase 5 after the core coaching flow and timer are in place."
-              />
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <PlaceholderPage
-                title="Settings"
-                description="Account, detection, and email settings arrive in Phase 5. For now this route validates the protected shell."
-              />
-            }
-          />
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route element={<Layout />}>
+            <Route path="/" element={<Session />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/history/:sessionId" element={<SessionDetail />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
         </Route>
       </Routes>
     </>
