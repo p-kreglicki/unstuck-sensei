@@ -1,8 +1,10 @@
 import { enable as enableAutostart } from "@tauri-apps/plugin-autostart";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -79,29 +81,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  async function maybeEnableAutostart() {
+  const maybeEnableAutostart = useCallback(async () => {
     try {
       await enableAutostart();
     } catch {
       // Autostart is helpful but not required for auth to succeed.
     }
-  }
+  }, []);
 
-  function startAccountDeletion() {
+  const startAccountDeletion = useCallback(() => {
     setIsAccountDeletionInProgress(true);
-  }
+  }, []);
 
-  function cancelAccountDeletion() {
+  const cancelAccountDeletion = useCallback(() => {
     setIsAccountDeletionInProgress(false);
-  }
+  }, []);
 
-  function finishAccountDeletion() {
+  const finishAccountDeletion = useCallback(() => {
     setSession(null);
     setIsAccountDeletionInProgress(false);
     setIsLoading(false);
-  }
+  }, []);
 
-  async function signIn(email: string, password: string): Promise<AuthResult> {
+  const signIn = useCallback(async (email: string, password: string): Promise<AuthResult> => {
     setIsLoading(true);
 
     try {
@@ -119,9 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [maybeEnableAutostart]);
 
-  async function signUp(email: string, password: string): Promise<AuthResult> {
+  const signUp = useCallback(async (email: string, password: string): Promise<AuthResult> => {
     setIsLoading(true);
 
     try {
@@ -147,9 +149,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [maybeEnableAutostart]);
 
-  async function signOut(): Promise<AuthResult> {
+  const signOut = useCallback(async (): Promise<AuthResult> => {
     setIsLoading(true);
 
     try {
@@ -162,23 +164,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      cancelAccountDeletion,
+      finishAccountDeletion,
+      isLoading,
+      isAccountDeletionInProgress,
+      session,
+      signIn,
+      signOut,
+      signUp,
+      startAccountDeletion,
+      user,
+    }),
+    [
+      cancelAccountDeletion,
+      finishAccountDeletion,
+      isLoading,
+      isAccountDeletionInProgress,
+      session,
+      signIn,
+      signOut,
+      signUp,
+      startAccountDeletion,
+      user,
+    ],
+  );
 
   return (
-    <AuthContext.Provider
-      value={{
-        cancelAccountDeletion,
-        finishAccountDeletion,
-        isLoading,
-        isAccountDeletionInProgress,
-        session,
-        signIn,
-        signOut,
-        signUp,
-        startAccountDeletion,
-        user,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

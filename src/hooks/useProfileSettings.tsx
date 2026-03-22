@@ -1,7 +1,10 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -94,14 +97,23 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileSettings | null>(null);
+  const profileRef = useRef<ProfileSettings | null>(null);
+  const userId = user?.id ?? null;
+  const accessToken = session?.access_token ?? null;
+  const isSignedIn = session !== null;
+
+  const setCurrentProfile = useCallback((nextProfile: ProfileSettings | null) => {
+    profileRef.current = nextProfile;
+    setProfile(nextProfile);
+  }, []);
 
   useEffect(() => {
     let active = true;
 
     async function run() {
-      if (!user?.id) {
+      if (!userId) {
         if (active) {
-          setProfile(null);
+          setCurrentProfile(null);
           setLoadError(null);
           setIsLoading(false);
         }
@@ -120,13 +132,13 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
       setLoadError(null);
 
       try {
-        const nextProfile = await loadProfileSettings(user.id);
+        const nextProfile = await loadProfileSettings(userId);
 
         if (!active) {
           return;
         }
 
-        setProfile(nextProfile);
+        setCurrentProfile(nextProfile);
       } catch (error) {
         if (!active) {
           return;
@@ -147,10 +159,10 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
     return () => {
       active = false;
     };
-  }, [isAccountDeletionInProgress, user?.id]);
+  }, [isAccountDeletionInProgress, setCurrentProfile, userId]);
 
-  async function reload() {
-    if (!user?.id || isAccountDeletionInProgress) {
+  const reload = useCallback(async () => {
+    if (!userId || isAccountDeletionInProgress) {
       return;
     }
 
@@ -158,52 +170,53 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
     setLoadError(null);
 
     try {
-      const nextProfile = await loadProfileSettings(user.id);
-      setProfile(nextProfile);
+      const nextProfile = await loadProfileSettings(userId);
+      setCurrentProfile(nextProfile);
     } catch (error) {
       setLoadError(toNetworkMessage(error, "Unable to load your settings right now."));
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [isAccountDeletionInProgress, setCurrentProfile, userId]);
 
-  async function updateProfile(
+  const updateProfile = useCallback(async (
     patch: ProfileSettingsPatch,
     options: MutationOptions,
-  ): Promise<MutationResult> {
+  ): Promise<MutationResult> => {
+    const previousProfile = profileRef.current;
+
     if (isAccountDeletionInProgress) {
       return {
         error: createDisplayError("Account deletion is in progress."),
-        profile,
+        profile: previousProfile,
         warning: null,
       };
     }
 
-    if (!user?.id) {
+    if (!userId) {
       return {
         error: createDisplayError("Sign in again and retry."),
-        profile,
+        profile: previousProfile,
         warning: null,
       };
     }
 
     const optimistic = options.optimistic ?? true;
-    const previousProfile = profile;
 
     if (optimistic && previousProfile) {
-      setProfile({
+      setCurrentProfile({
         ...previousProfile,
         ...patch,
       });
     }
 
     try {
-      const nextProfile = await saveProfileSettings(user.id, patch);
+      const nextProfile = await saveProfileSettings(userId, patch);
       let warning: string | null = null;
 
-      setProfile(nextProfile);
+      setCurrentProfile(nextProfile);
 
-      if (session && hasDetectionSettingsPatch(patch)) {
+      if (isSignedIn && hasDetectionSettingsPatch(patch)) {
         try {
           await syncConfig({
             signedIn: true,
@@ -223,7 +236,7 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
       };
     } catch (error) {
       if (optimistic) {
-        setProfile(previousProfile);
+        setCurrentProfile(previousProfile);
       }
 
       return {
@@ -234,12 +247,18 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
         warning: null,
       };
     }
-  }
+  }, [
+    isAccountDeletionInProgress,
+    isSignedIn,
+    setCurrentProfile,
+    syncConfig,
+    userId,
+  ]);
 
-  async function completeOnboarding(input: {
+  const completeOnboarding = useCallback(async (input: {
     detectionSensitivity: DetectionSensitivity;
     preferredTime: string;
-  }) {
+  }) => {
     return updateProfile(
       {
         detectionSensitivity: input.detectionSensitivity,
@@ -252,9 +271,9 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
         optimistic: false,
       },
     );
-  }
+  }, [updateProfile]);
 
-  async function changePassword(newPassword: string) {
+  const changePassword = useCallback(async (newPassword: string) => {
     if (isAccountDeletionInProgress) {
       return {
         error: createDisplayError("Account deletion is in progress."),
@@ -278,9 +297,9 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
         ),
       };
     }
-  }
+  }, [isAccountDeletionInProgress]);
 
-  async function deleteAccount() {
+  const deleteAccount = useCallback(async () => {
     if (isAccountDeletionInProgress) {
       return {
         error: createDisplayError("Account deletion is already in progress."),
@@ -295,7 +314,7 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
       };
     }
 
-    if (!session?.access_token) {
+    if (!accessToken) {
       return {
         error: createDisplayError("Your session expired. Sign in again to continue."),
       };
@@ -306,7 +325,7 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
 
       const response = await fetch(joinUrl(baseUrl, "/api/account/delete"), {
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
         method: "POST",
@@ -344,19 +363,40 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
         ),
       };
     }
-  }
+  }, [
+    accessToken,
+    cancelAccountDeletion,
+    finishAccountDeletion,
+    isAccountDeletionInProgress,
+    startAccountDeletion,
+  ]);
 
-  return {
-    changePassword,
-    completeOnboarding,
-    deleteAccount,
-    isLoading,
-    loadError,
-    profile,
-    reload,
-    resolveLocalTimeZone,
-    updateProfile,
-  };
+  const getLocalTimeZone = useCallback(() => resolveLocalTimeZone(), []);
+
+  return useMemo<ProfileSettingsContextValue>(
+    () => ({
+      changePassword,
+      completeOnboarding,
+      deleteAccount,
+      isLoading,
+      loadError,
+      profile,
+      reload,
+      resolveLocalTimeZone: getLocalTimeZone,
+      updateProfile,
+    }),
+    [
+      changePassword,
+      completeOnboarding,
+      deleteAccount,
+      getLocalTimeZone,
+      isLoading,
+      loadError,
+      profile,
+      reload,
+      updateProfile,
+    ],
+  );
 }
 
 export function ProfileSettingsProvider({ children }: { children: ReactNode }) {

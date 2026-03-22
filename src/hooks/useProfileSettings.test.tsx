@@ -140,6 +140,52 @@ describe("useProfileSettings", () => {
     });
   });
 
+  it("keeps provider action identities stable across load and profile updates", async () => {
+    saveProfileSettingsMock.mockResolvedValue({
+      ...profile,
+      displayName: "Updated Founder",
+    });
+
+    const { result } = renderHook(() => useProfileSettings(), { wrapper });
+
+    const initialChangePassword = result.current.changePassword;
+    const initialCompleteOnboarding = result.current.completeOnboarding;
+    const initialDeleteAccount = result.current.deleteAccount;
+    const initialReload = result.current.reload;
+    const initialResolveLocalTimeZone = result.current.resolveLocalTimeZone;
+    const initialUpdateProfile = result.current.updateProfile;
+
+    await waitFor(() => {
+      expect(result.current.profile?.displayName).toBe("Founder");
+    });
+
+    expect(result.current.changePassword).toBe(initialChangePassword);
+    expect(result.current.completeOnboarding).toBe(initialCompleteOnboarding);
+    expect(result.current.deleteAccount).toBe(initialDeleteAccount);
+    expect(result.current.reload).toBe(initialReload);
+    expect(result.current.resolveLocalTimeZone).toBe(initialResolveLocalTimeZone);
+    expect(result.current.updateProfile).toBe(initialUpdateProfile);
+
+    await act(async () => {
+      await result.current.updateProfile(
+        {
+          displayName: "Updated Founder",
+        },
+        {
+          fallbackMessage: "Unable to save profile right now.",
+        },
+      );
+    });
+
+    expect(result.current.profile?.displayName).toBe("Updated Founder");
+    expect(result.current.changePassword).toBe(initialChangePassword);
+    expect(result.current.completeOnboarding).toBe(initialCompleteOnboarding);
+    expect(result.current.deleteAccount).toBe(initialDeleteAccount);
+    expect(result.current.reload).toBe(initialReload);
+    expect(result.current.resolveLocalTimeZone).toBe(initialResolveLocalTimeZone);
+    expect(result.current.updateProfile).toBe(initialUpdateProfile);
+  });
+
   it("syncs the detection runtime after a successful detection settings save", async () => {
     saveProfileSettingsMock.mockResolvedValue({
       ...profile,
