@@ -1,5 +1,5 @@
 import { MemoryRouter } from "react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { Session } from "./Session";
 
 const {
@@ -231,5 +231,127 @@ describe("Session", () => {
     expect(
       screen.queryByText("The coaching request failed."),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders the conversation shell as a labeled log with a docked composer", async () => {
+    loadRecentSessionSummariesMock.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter>
+        <Session />
+      </MemoryRouter>,
+    );
+
+    const conversationLog = await screen.findByRole("log", {
+      name: "Conversation",
+    });
+
+    expect(screen.getByText("Session chat")).toBeInTheDocument();
+    expect(conversationLog).toHaveClass("overflow-y-auto");
+    expect(within(conversationLog).getByText("What are you stuck on?")).toBeInTheDocument();
+    expect(screen.getByLabelText("The sticky task")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keep going" })).toBeInTheDocument();
+  });
+
+  it("renders energy selection inside the conversation shell", async () => {
+    loadRecentSessionSummariesMock.mockResolvedValue([]);
+    loadActiveSessionDraftMock.mockResolvedValue({
+      checked_in_at: null,
+      clarifying_answer: null,
+      clarifying_question: null,
+      created_at: "2026-03-22T09:00:00.000Z",
+      energy_level: null,
+      feedback: null,
+      id: "session-1",
+      source: "manual",
+      status: "active",
+      steps: null,
+      stuck_on: "Ship the onboarding email",
+      timer_extended: false,
+      timer_revision: 0,
+      updated_at: "2026-03-22T09:00:00.000Z",
+      user_id: "user-1",
+    });
+    loadConversationMessagesMock.mockResolvedValue([
+      {
+        content: "Ship the onboarding email",
+        created_at: "2026-03-22T09:00:01.000Z",
+        id: "message-1",
+        role: "user",
+        session_id: "session-1",
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <Session />
+      </MemoryRouter>,
+    );
+
+    const conversationLog = await screen.findByRole("log", {
+      name: "Conversation",
+    });
+
+    expect(
+      within(conversationLog)
+        .getAllByText("What kind of energy do you have right now?")
+        .length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Break it down" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Low/ })).toBeInTheDocument();
+  });
+
+  it("keeps clarifying replies in the same shell composer", async () => {
+    loadRecentSessionSummariesMock.mockResolvedValue([]);
+    loadActiveSessionDraftMock.mockResolvedValue({
+      checked_in_at: null,
+      clarifying_answer: null,
+      clarifying_question: "What part feels heaviest right now?",
+      created_at: "2026-03-22T09:00:00.000Z",
+      energy_level: "medium",
+      feedback: null,
+      id: "session-1",
+      source: "manual",
+      status: "active",
+      steps: null,
+      stuck_on: "Ship the onboarding email",
+      timer_extended: false,
+      timer_revision: 0,
+      updated_at: "2026-03-22T09:00:00.000Z",
+      user_id: "user-1",
+    });
+    loadConversationMessagesMock.mockResolvedValue([
+      {
+        content: "Ship the onboarding email",
+        created_at: "2026-03-22T09:00:01.000Z",
+        id: "message-1",
+        role: "user",
+        session_id: "session-1",
+      },
+      {
+        content: "What part feels heaviest right now?",
+        created_at: "2026-03-22T09:00:05.000Z",
+        id: "message-2",
+        role: "assistant",
+        session_id: "session-1",
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <Session />
+      </MemoryRouter>,
+    );
+
+    const conversationLog = await screen.findByRole("log", {
+      name: "Conversation",
+    });
+
+    expect(within(conversationLog).getByText("Ship the onboarding email")).toBeInTheDocument();
+    expect(within(conversationLog).getByText("Medium")).toBeInTheDocument();
+    expect(within(conversationLog).getByText("What part feels heaviest right now?")).toBeInTheDocument();
+    expect(screen.getByText("Replying to: What part feels heaviest right now?")).toBeInTheDocument();
+    expect(screen.getByLabelText("Clarifying reply")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Give me the steps" })).toBeInTheDocument();
   });
 });
