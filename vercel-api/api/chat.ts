@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { encodeSseEvent, parseSseFrames } from "../../shared/session/chat-sse.js";
+import { encodeSseEvent, parseSseFrames } from "../lib/chat-sse.js";
 import {
   clampSteps,
   createSessionSteps,
@@ -11,15 +11,15 @@ import {
   type ChatRequestMode,
   type SessionSummary,
   type StructuredChatResponse,
-} from "../../shared/session/session-protocol.js";
+} from "../lib/session-protocol.js";
 import {
   buildSessionSystemPrompt,
   buildSessionUserPrompt,
-} from "../../shared/session/session-prompts.js";
+} from "../lib/session-prompts.js";
 import {
   CLARIFYING_ANSWER_MAX_LENGTH,
   STUCK_ON_MAX_LENGTH,
-} from "../../shared/session/session-input-limits.js";
+} from "../lib/session-input-limits.js";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
