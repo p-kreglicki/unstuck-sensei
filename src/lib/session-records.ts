@@ -77,9 +77,19 @@ function isTimerMutationResult(value: unknown): value is TimerMutationResult {
   );
 }
 
-async function runTimerRpc(
-  fn: keyof Database["public"]["Functions"],
-  args: Database["public"]["Functions"][typeof fn]["Args"],
+type TimerRpcName =
+  | "check_in_timer_session"
+  | "complete_timer_block"
+  | "expire_timer_checkin"
+  | "revert_extension_start"
+  | "revert_timer_start"
+  | "start_extension_block"
+  | "start_timer_block"
+  | "stop_timer_block";
+
+async function runTimerRpc<K extends TimerRpcName>(
+  fn: K,
+  args: Database["public"]["Functions"][K]["Args"],
   fallbackMessage: string,
 ) {
   const { data, error } = await supabase.rpc(fn, args);

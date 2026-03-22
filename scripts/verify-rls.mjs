@@ -99,6 +99,10 @@ async function expectFailure(name, fn) {
   }
 }
 
+async function consumeDeleteAccountRateLimit(client) {
+  return client.rpc("consume_delete_account_rate_limit", {});
+}
+
 async function main() {
   const { url, key } = await loadEnv();
 
@@ -202,6 +206,76 @@ async function main() {
     if ((data ?? []).length !== 0) {
       throw new Error("User B was able to read User A messages");
     }
+  });
+
+  await expectPass("user A can consume delete-account rate limit for the first three attempts", async () => {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const { data, error } = await consumeDeleteAccountRateLimit(userA.client);
+      if (error) {
+        throw error;
+      }
+      if (data?.status !== "allowed") {
+        throw new Error(
+          `Expected allowed on attempt ${attempt}, received ${JSON.stringify(data)}`,
+        );
+      }
+    }
+  });
+
+  await expectPass("user A is rate limited on the fourth delete-account attempt", async () => {
+    const { data, error } = await consumeDeleteAccountRateLimit(userA.client);
+    if (error) {
+      throw error;
+    }
+    if (data?.status !== "rate_limited") {
+      throw new Error(
+        `Expected rate_limited on fourth attempt, received ${JSON.stringify(data)}`,
+      );
+    }
+  });
+
+  await expectPass("user B has an independent delete-account rate limit bucket", async () => {
+    const { data, error } = await consumeDeleteAccountRateLimit(userB.client);
+    if (error) {
+      throw error;
+    }
+    if (data?.status !== "allowed") {
+      throw new Error(
+        `Expected allowed for user B after user A exhausted the limit, received ${JSON.stringify(data)}`,
+      );
+    }
+  });
+
+  await expectPass("anonymous client cannot consume delete-account rate limit via RPC", async () => {
+    const { data, error } = await consumeDeleteAccountRateLimit(anonClient);
+    if (!error && data?.status !== "unauthorized") {
+      throw new Error(
+        `Expected an RPC rejection or unauthorized status for anon client, received ${JSON.stringify(data)}`,
+      );
+    }
+  });
+
+  await expectPass("user A cannot read delete-account logs directly", async () => {
+    const { data, error } = await userA.client
+      .from("account_delete_request_logs")
+      .select("*")
+      .eq("user_id", userA.user.id);
+    if (error) {
+      throw error;
+    }
+    if ((data ?? []).length !== 0) {
+      throw new Error("User A was able to read account delete logs directly");
+    }
+  });
+
+  await expectFailure("user A cannot insert delete-account logs directly", async () => {
+    const { error } = await userA.client
+      .from("account_delete_request_logs")
+      .insert({ user_id: userA.user.id });
+    if (!error) {
+      return;
+    }
+    throw error;
   });
 
   console.log("RLS verification completed successfully.");

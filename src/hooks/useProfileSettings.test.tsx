@@ -4,6 +4,7 @@ import {
   ProfileSettingsProvider,
   useProfileSettings,
 } from "./useProfileSettings";
+import { PASSWORD_MIN_LENGTH } from "../lib/password-policy";
 
 const {
   cancelAccountDeletionMock,
@@ -71,6 +72,7 @@ describe("useProfileSettings", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     vi.stubGlobal("fetch", vi.fn());
 
     useAuthMock.mockReturnValue({
@@ -97,6 +99,7 @@ describe("useProfileSettings", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -218,6 +221,23 @@ describe("useProfileSettings", () => {
     });
   });
 
+  it("rejects weak passwords before calling Supabase", async () => {
+    const { result } = renderHook(() => useProfileSettings(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.profile?.displayName).toBe("Founder");
+    });
+
+    await act(async () => {
+      const response = await result.current.changePassword("short");
+      expect(response.error?.message).toBe(
+        `Use at least ${PASSWORD_MIN_LENGTH} characters for your password.`,
+      );
+    });
+
+    expect(supabaseUpdateUserMock).not.toHaveBeenCalled();
+  });
+
   it("clears local auth state even when local sign-out fails after account deletion", async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(null, {
@@ -268,5 +288,42 @@ describe("useProfileSettings", () => {
     expect(startAccountDeletionMock).toHaveBeenCalledTimes(1);
     expect(cancelAccountDeletionMock).toHaveBeenCalledTimes(1);
     expect(finishAccountDeletionMock).not.toHaveBeenCalled();
+  });
+
+  it("aborts a hung account deletion request and clears the deletion guard", async () => {
+    vi.mocked(fetch).mockImplementation((_input, init) => {
+      const signal = init?.signal;
+
+      return new Promise((_, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    const { result } = renderHook(() => useProfileSettings(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.profile?.displayName).toBe("Founder");
+    });
+
+    vi.useFakeTimers();
+
+    let response:
+      | Awaited<ReturnType<typeof result.current.deleteAccount>>
+      | undefined;
+
+    await act(async () => {
+      const deletePromise = result.current.deleteAccount();
+      await vi.advanceTimersByTimeAsync(30_000);
+      response = await deletePromise;
+    });
+
+    expect(startAccountDeletionMock).toHaveBeenCalledTimes(1);
+    expect(cancelAccountDeletionMock).toHaveBeenCalledTimes(1);
+    expect(finishAccountDeletionMock).not.toHaveBeenCalled();
+    expect(response?.error?.message).toBe(
+      "Account deletion timed out. Check your connection and try again.",
+    );
   });
 });
