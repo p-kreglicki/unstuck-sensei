@@ -187,6 +187,68 @@ describe("account delete route", () => {
     expect(deleteUser).not.toHaveBeenCalled();
   });
 
+  it("returns actionable retry guidance when deletion fails after revocation", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        status: "allowed",
+      },
+      error: null,
+    });
+    const revokeRefreshTokens = vi.fn().mockResolvedValue({
+      data: null,
+      error: null,
+    });
+    const deleteUser = vi.fn().mockResolvedValue({
+      data: null,
+      error: new Error("delete failed"),
+    });
+
+    createClientMock
+      .mockReturnValueOnce({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: {
+              user: {
+                id: "verified-user-id",
+              },
+            },
+            error: null,
+          }),
+        },
+      })
+      .mockReturnValueOnce({
+        rpc,
+      })
+      .mockReturnValueOnce({
+        auth: {
+          admin: {
+            signOut: revokeRefreshTokens,
+            deleteUser,
+          },
+        },
+      });
+
+    const response = await handleDeleteAccountRequest(
+      new Request("https://example.com/api/account/delete", {
+        headers: {
+          Authorization: "Bearer token-123",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error:
+        "Your sessions were signed out, but account deletion did not finish. Sign in again and retry.",
+    });
+    expect(revokeRefreshTokens).toHaveBeenCalledWith("token-123", "global");
+    expect(deleteUser).toHaveBeenCalledWith("verified-user-id");
+    expect(revokeRefreshTokens.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteUser.mock.invocationCallOrder[0],
+    );
+  });
+
   it("returns 429 when delete-account rate limiting rejects the request", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: {

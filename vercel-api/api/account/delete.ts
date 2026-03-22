@@ -20,6 +20,9 @@ type DeleteAccountRateLimitResult = {
   status: DeleteAccountRateLimitStatus;
 };
 
+const DELETE_ACCOUNT_DELETE_FAILURE_MESSAGE =
+  "Your sessions were signed out, but account deletion did not finish. Sign in again and retry.";
+
 export const runtime = "nodejs";
 
 export default {
@@ -146,6 +149,8 @@ export async function handleDeleteAccountRequest(request: Request) {
     },
   );
 
+  // Revoke refresh tokens before deletion so a partial failure cannot leave an
+  // account behind with still-active sessions.
   const { error: revokeError } = await adminClient.auth.admin.signOut(token, "global");
 
   if (revokeError) {
@@ -160,7 +165,7 @@ export async function handleDeleteAccountRequest(request: Request) {
 
   if (deleteError) {
     return jsonResponse(
-      { error: "Unable to delete your account right now." },
+      { error: DELETE_ACCOUNT_DELETE_FAILURE_MESSAGE },
       request,
       { status: 500 },
     );
