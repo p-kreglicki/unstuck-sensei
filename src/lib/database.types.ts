@@ -9,6 +9,32 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      account_delete_request_logs: {
+        Row: {
+          created_at: string;
+          id: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            columns: ["user_id"];
+            foreignKeyName: "account_delete_request_logs_user_id_fkey";
+            isOneToOne: false;
+            referencedColumns: ["id"];
+            referencedRelation: "users";
+          },
+        ];
+      };
       chat_request_logs: {
         Row: {
           completed_at: string | null;
@@ -255,6 +281,10 @@ export type Database = {
           input_feedback: string;
           input_session_id: string;
         };
+        Returns: Json;
+      };
+      consume_delete_account_rate_limit: {
+        Args: Record<PropertyKey, never>;
         Returns: Json;
       };
       complete_timer_block: {

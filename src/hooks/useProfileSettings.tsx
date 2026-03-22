@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { createDisplayError, toDisplayError } from "../lib/errors";
+import { validatePassword } from "../lib/password-policy";
 import {
   hasDetectionSettingsPatch,
   loadProfileSettings,
@@ -52,6 +53,7 @@ type ProfileSettingsContextValue = {
 };
 
 const ProfileSettingsContext = createContext<ProfileSettingsContextValue | null>(null);
+const DELETE_ACCOUNT_TIMEOUT_MS = 30_000;
 
 function joinUrl(baseUrl: string, path: string) {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
@@ -77,6 +79,10 @@ async function readApiError(response: Response) {
 }
 
 function toNetworkMessage(error: unknown, fallbackMessage: string) {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return "Account deletion timed out. Check your connection and try again.";
+  }
+
   if (!navigator.onLine) {
     return "You’re offline. Reconnect and try again.";
   }
@@ -280,6 +286,14 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
       };
     }
 
+    const passwordError = validatePassword(newPassword);
+
+    if (passwordError) {
+      return {
+        error: createDisplayError(passwordError),
+      };
+    }
+
     try {
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
@@ -322,14 +336,25 @@ function useProvideProfileSettings(): ProfileSettingsContextValue {
 
     try {
       startAccountDeletion();
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => {
+        controller.abort();
+      }, DELETE_ACCOUNT_TIMEOUT_MS);
 
-      const response = await fetch(joinUrl(baseUrl, "/api/account/delete"), {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        method: "POST",
-      });
+      let response: Response;
+
+      try {
+        response = await fetch(joinUrl(baseUrl, "/api/account/delete"), {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+          signal: controller.signal,
+        });
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         cancelAccountDeletion();

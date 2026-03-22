@@ -11,6 +11,15 @@ const ALLOWED_CORS_ORIGINS = new Set([
   "tauri://localhost",
 ]);
 
+type DeleteAccountRateLimitStatus =
+  | "allowed"
+  | "rate_limited"
+  | "unauthorized";
+
+type DeleteAccountRateLimitResult = {
+  status: DeleteAccountRateLimitStatus;
+};
+
 export const runtime = "nodejs";
 
 export default {
@@ -78,6 +87,51 @@ export async function handleDeleteAccountRequest(request: Request) {
       { error: "Unauthorized. Sign in again and retry." },
       request,
       { status: 401 },
+    );
+  }
+
+  const scopedClient = createClient(
+    environment.supabaseUrl,
+    environment.supabasePublishableKey,
+    {
+      accessToken: async () => token,
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    },
+  );
+
+  let rateLimitResult: DeleteAccountRateLimitResult;
+
+  try {
+    rateLimitResult = await consumeDeleteAccountRateLimit(scopedClient);
+  } catch (error) {
+    console.error("[account-delete] rate limit check failed", {
+      error: error instanceof Error ? error.message : String(error),
+      userId: user.id,
+    });
+
+    return jsonResponse(
+      { error: "Unable to delete your account right now." },
+      request,
+      { status: 500 },
+    );
+  }
+
+  if (rateLimitResult.status === "unauthorized") {
+    return jsonResponse(
+      { error: "Unauthorized. Sign in again and retry." },
+      request,
+      { status: 401 },
+    );
+  }
+
+  if (rateLimitResult.status === "rate_limited") {
+    return jsonResponse(
+      { error: "Too many delete attempts. Wait a bit, then try again." },
+      request,
+      { status: 429 },
     );
   }
 
@@ -155,6 +209,37 @@ function getRequiredEnvironment(request: Request) {
     supabaseServiceRoleKey,
     supabaseUrl,
   };
+}
+
+async function consumeDeleteAccountRateLimit(
+  client: {
+    rpc(fn: string, args: Record<string, unknown>): PromiseLike<{
+      data: unknown;
+      error: { message?: string } | null;
+    }>;
+  },
+) {
+  const { data, error } = await client.rpc("consume_delete_account_rate_limit", {});
+
+  if (error) {
+    throw new Error(error.message ?? "Delete-account rate limit failed.");
+  }
+
+  if (!isDeleteAccountRateLimitResult(data)) {
+    throw new Error("Delete-account rate limit returned an invalid payload.");
+  }
+
+  return data;
+}
+
+function isDeleteAccountRateLimitResult(value: unknown): value is DeleteAccountRateLimitResult {
+  if (!value || typeof value !== "object" || !("status" in value)) {
+    return false;
+  }
+
+  return ["allowed", "rate_limited", "unauthorized"].includes(
+    String(value.status),
+  );
 }
 
 function jsonResponse(
