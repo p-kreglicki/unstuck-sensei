@@ -28,6 +28,7 @@ export function Onboarding() {
     tone: "error" | "warning";
   } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const hasWarningFeedback = feedback?.tone === "warning";
 
   useEffect(() => {
     if (!profile) {
@@ -63,8 +64,13 @@ export function Onboarding() {
         message: result.warning,
         tone: "warning",
       });
+      return;
     }
 
+    navigate("/", { replace: true });
+  }
+
+  function handleContinue() {
     navigate("/", { replace: true });
   }
 
@@ -91,7 +97,10 @@ export function Onboarding() {
               <input
                 className={fieldClassName}
                 disabled={isLoading || isSaving}
-                onChange={(event) => setPreferredTime(event.currentTarget.value)}
+                onChange={(event) => {
+                  setPreferredTime(event.currentTarget.value);
+                  setFeedback(null);
+                }}
                 type="time"
                 value={preferredTime}
               />
@@ -111,7 +120,10 @@ export function Onboarding() {
                         ? "bg-teal-400 text-slate-950"
                         : "text-slate-300 hover:bg-white/5 hover:text-white",
                     ].join(" ")}
-                    onClick={() => setDetectionSensitivity(value)}
+                    onClick={() => {
+                      setDetectionSensitivity(value);
+                      setFeedback(null);
+                    }}
                     type="button"
                   >
                     {value}
@@ -157,9 +169,14 @@ export function Onboarding() {
             <button
               className={submitClassName}
               disabled={isLoading || isSaving}
-              type="submit"
+              onClick={hasWarningFeedback ? handleContinue : undefined}
+              type={hasWarningFeedback ? "button" : "submit"}
             >
-              {isSaving ? "Saving setup…" : "Enter the session flow"}
+              {isSaving
+                ? "Saving setup…"
+                : hasWarningFeedback
+                  ? "Continue to the session flow"
+                  : "Enter the session flow"}
             </button>
 
             {feedback ? (

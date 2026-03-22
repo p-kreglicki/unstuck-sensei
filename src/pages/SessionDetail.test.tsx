@@ -96,4 +96,77 @@ describe("SessionDetail", () => {
       ).toBeInTheDocument();
     });
   });
+
+  it("renders a neutral empty state when the session summary is missing", async () => {
+    loadSessionDetailMock.mockResolvedValue({
+      messages: {
+        data: [],
+        error: null,
+      },
+      session: {
+        data: null,
+        error: null,
+      },
+      timerBlocks: {
+        data: [],
+        error: null,
+      },
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/session-404"]}>
+        <Routes>
+          <Route path="/history/:sessionId" element={<SessionDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("This session could not be found.")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByText("Unable to load this session summary."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("treats a missing summary as a neutral result when retrying the session section", async () => {
+    loadSessionDetailMock.mockResolvedValue({
+      messages: {
+        data: [],
+        error: null,
+      },
+      session: {
+        data: null,
+        error: "Unable to load this session summary.",
+      },
+      timerBlocks: {
+        data: [],
+        error: null,
+      },
+    });
+    loadSessionRecordMock.mockResolvedValue(null);
+
+    render(
+      <MemoryRouter initialEntries={["/history/session-404"]}>
+        <Routes>
+          <Route path="/history/:sessionId" element={<SessionDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Unable to load this session summary.")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry summary" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("This session could not be found.")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByText("Unable to load this session summary."),
+    ).not.toBeInTheDocument();
+  });
 });

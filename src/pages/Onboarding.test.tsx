@@ -2,10 +2,20 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { Onboarding } from "./Onboarding";
 
-const { completeOnboardingMock, useProfileSettingsMock } = vi.hoisted(() => ({
+const { completeOnboardingMock, navigateMock, useProfileSettingsMock } = vi.hoisted(() => ({
   completeOnboardingMock: vi.fn(),
+  navigateMock: vi.fn(),
   useProfileSettingsMock: vi.fn(),
 }));
+
+vi.mock("react-router", async () => {
+  const actual = await vi.importActual<typeof import("react-router")>("react-router");
+
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+  };
+});
 
 vi.mock("../hooks/useProfileSettings", () => ({
   useProfileSettings: () => useProfileSettingsMock(),
@@ -64,5 +74,36 @@ describe("Onboarding", () => {
         preferredTime: "10:15",
       });
     });
+
+    expect(navigateMock).toHaveBeenCalledWith("/", { replace: true });
+  });
+
+  it("shows warning feedback before continuing to the session flow", async () => {
+    completeOnboardingMock.mockResolvedValue({
+      error: null,
+      warning: "Settings saved, but the desktop detection runtime did not refresh.",
+    });
+
+    render(
+      <MemoryRouter>
+        <Onboarding />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Enter the session flow" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Settings saved, but the desktop detection runtime did not refresh.",
+      );
+    });
+
+    expect(navigateMock).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to the session flow" }),
+    );
+
+    expect(navigateMock).toHaveBeenCalledWith("/", { replace: true });
   });
 });

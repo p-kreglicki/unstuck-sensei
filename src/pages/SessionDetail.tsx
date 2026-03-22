@@ -42,6 +42,13 @@ function formatDuration(seconds: number) {
   return `${minutes} min`;
 }
 
+function toSessionSection(session: SessionRow | null): SessionDetailResult["session"] {
+  return {
+    data: session,
+    error: null,
+  };
+}
+
 function SessionSummaryCard({ session }: { session: SessionRow }) {
   const steps = parseSessionSteps(session.steps);
 
@@ -156,15 +163,7 @@ export function SessionDetail() {
           current
             ? {
                 ...current,
-                session: session
-                  ? {
-                      data: session,
-                      error: null,
-                    }
-                  : {
-                      data: null,
-                      error: "Unable to load this session summary.",
-                    },
+                session: toSessionSection(session),
               }
             : current,
         );
@@ -243,6 +242,15 @@ export function SessionDetail() {
 
       {!isLoading && detail?.session.data ? (
         <SessionSummaryCard session={detail.session.data} />
+      ) : null}
+
+      {!isLoading &&
+      detail &&
+      detail.session.data === null &&
+      detail.session.error === null ? (
+        <div className="rounded-[24px] border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
+          <p>This session could not be found.</p>
+        </div>
       ) : null}
 
       {!isLoading && detail?.session.error && !detail.session.data ? (

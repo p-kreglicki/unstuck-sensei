@@ -338,9 +338,12 @@ export async function loadSessionHistoryPage(input: {
 function normalizeSectionResult<T>(
   result: PromiseSettledResult<T>,
   fallbackMessage: string,
+  options?: {
+    treatNullAsError?: boolean;
+  },
 ): SessionDetailSection<T> {
   if (result.status === "fulfilled") {
-    if (result.value === null) {
+    if ((options?.treatNullAsError ?? true) && result.value === null) {
       return {
         data: null,
         error: fallbackMessage,
@@ -379,6 +382,9 @@ export async function loadSessionDetail(sessionId: string): Promise<SessionDetai
     session: normalizeSectionResult(
       sessionResult,
       "Unable to load this session summary.",
+      {
+        treatNullAsError: false,
+      },
     ),
     timerBlocks: normalizeSectionResult(
       timerBlocksResult,
