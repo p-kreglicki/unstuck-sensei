@@ -79,4 +79,37 @@ describe("Login", () => {
       );
     });
   });
+
+  it("blocks sign-up when the password is too short", async () => {
+    const signUp = vi.fn().mockResolvedValue({
+      error: null,
+    });
+
+    useAuthMock.mockReturnValue({
+      isLoading: false,
+      session: null,
+      signIn: vi.fn(),
+      signUp,
+    });
+
+    render(
+      <MemoryRouter>
+        <Login />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "sign up" }));
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "founder@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(signUp).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Use at least 8 characters for your password.",
+    );
+  });
 });

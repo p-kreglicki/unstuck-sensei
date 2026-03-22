@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Navigate } from "react-router";
 import { useAuth } from "../hooks/useAuth";
+import { validatePassword } from "../lib/password-policy";
 
 type AuthFeedback = {
   message: string;
@@ -30,6 +31,18 @@ export function Login() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFeedback(null);
+
+    if (mode === "sign-up") {
+      const passwordError = validatePassword(password);
+
+      if (passwordError) {
+        setFeedback({
+          message: passwordError,
+          tone: "error",
+        });
+        return;
+      }
+    }
 
     const action = mode === "sign-in" ? signIn : signUp;
     const { error } = await action(email.trim(), password);

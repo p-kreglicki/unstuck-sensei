@@ -1,8 +1,10 @@
 import { enable as enableAutostart } from "@tauri-apps/plugin-autostart";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -18,11 +20,15 @@ function toAuthError(error: unknown, fallbackMessage: string): Error {
 }
 
 type AuthContextValue = {
+  cancelAccountDeletion(): void;
+  finishAccountDeletion(): void;
   isLoading: boolean;
+  isAccountDeletionInProgress: boolean;
   session: Session | null;
   signIn(email: string, password: string): Promise<AuthResult>;
   signOut(): Promise<AuthResult>;
   signUp(email: string, password: string): Promise<AuthResult>;
+  startAccountDeletion(): void;
   user: User | null;
 };
 
@@ -31,6 +37,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAccountDeletionInProgress, setIsAccountDeletionInProgress] = useState(false);
   const user = session?.user ?? null;
 
   useEffect(() => {
@@ -62,6 +69,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setSession(nextSession);
+      if (!nextSession) {
+        setIsAccountDeletionInProgress(false);
+      }
       setIsLoading(false);
     });
 
@@ -71,15 +81,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  async function maybeEnableAutostart() {
+  const maybeEnableAutostart = useCallback(async () => {
     try {
       await enableAutostart();
     } catch {
       // Autostart is helpful but not required for auth to succeed.
     }
-  }
+  }, []);
 
-  async function signIn(email: string, password: string): Promise<AuthResult> {
+  const startAccountDeletion = useCallback(() => {
+    setIsAccountDeletionInProgress(true);
+  }, []);
+
+  const cancelAccountDeletion = useCallback(() => {
+    setIsAccountDeletionInProgress(false);
+  }, []);
+
+  const finishAccountDeletion = useCallback(() => {
+    setSession(null);
+    setIsAccountDeletionInProgress(false);
+    setIsLoading(false);
+  }, []);
+
+  const signIn = useCallback(async (email: string, password: string): Promise<AuthResult> => {
     setIsLoading(true);
 
     try {
@@ -97,9 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [maybeEnableAutostart]);
 
-  async function signUp(email: string, password: string): Promise<AuthResult> {
+  const signUp = useCallback(async (email: string, password: string): Promise<AuthResult> => {
     setIsLoading(true);
 
     try {
@@ -125,9 +149,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [maybeEnableAutostart]);
 
-  async function signOut(): Promise<AuthResult> {
+  const signOut = useCallback(async (): Promise<AuthResult> => {
     setIsLoading(true);
 
     try {
@@ -140,19 +164,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      cancelAccountDeletion,
+      finishAccountDeletion,
+      isLoading,
+      isAccountDeletionInProgress,
+      session,
+      signIn,
+      signOut,
+      signUp,
+      startAccountDeletion,
+      user,
+    }),
+    [
+      cancelAccountDeletion,
+      finishAccountDeletion,
+      isLoading,
+      isAccountDeletionInProgress,
+      session,
+      signIn,
+      signOut,
+      signUp,
+      startAccountDeletion,
+      user,
+    ],
+  );
 
   return (
-    <AuthContext.Provider
-      value={{
-        isLoading,
-        session,
-        signIn,
-        signOut,
-        signUp,
-        user,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

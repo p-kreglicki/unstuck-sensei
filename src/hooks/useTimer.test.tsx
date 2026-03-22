@@ -95,6 +95,7 @@ describe("TimerProvider", () => {
 
     isTauriMock.mockReturnValue(true);
     useAuthMock.mockReturnValue({
+      isAccountDeletionInProgress: false,
       user: {
         id: "user-1",
       },
@@ -196,6 +197,29 @@ describe("TimerProvider", () => {
         syncIds: ["sync-2"],
       });
     });
+  });
+
+  it("skips pending-sync replay while account deletion is in progress", async () => {
+    useAuthMock.mockReturnValue({
+      isAccountDeletionInProgress: true,
+      user: {
+        id: "user-1",
+      },
+    });
+
+    render(
+      <TimerProvider>
+        <div>timer</div>
+      </TimerProvider>,
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+
+    expect(loadActiveTimerSessionMock).not.toHaveBeenCalled();
+    expect(loadLatestTimerBlockMock).not.toHaveBeenCalled();
   });
 
   it("reuses the replay-owned timer refresh path on window focus", async () => {
@@ -470,13 +494,15 @@ describe("TimerProvider", () => {
   });
 
   it("retries replayed syncs after a mid-loop durability failure", async () => {
+    const completeAt = new Date(Date.now() - 60_000).toISOString();
+    const stopAt = new Date(Date.now() - 30_000).toISOString();
     const syncs = [
       {
         blockId: "block-1",
         expectedRevision: 1,
         id: "sync-1",
         kind: "complete_block" as const,
-        occurredAt: "2026-03-21T10:25:00.000Z",
+        occurredAt: completeAt,
         sessionId: "session-1",
       },
       {
@@ -484,7 +510,7 @@ describe("TimerProvider", () => {
         expectedRevision: 2,
         id: "sync-2",
         kind: "stop_block" as const,
-        occurredAt: "2026-03-21T10:26:00.000Z",
+        occurredAt: stopAt,
         sessionId: "session-1",
       },
     ];

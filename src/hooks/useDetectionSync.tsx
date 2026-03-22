@@ -79,9 +79,9 @@ export function useDetectionSync(session: Session | null) {
 }
 
 export function DetectionSyncBridge() {
-  const { session } = useAuth();
+  const { isAccountDeletionInProgress, session } = useAuth();
 
-  useDetectionSync(session);
+  useDetectionSync(isAccountDeletionInProgress ? null : session);
 
   return null;
 }

@@ -11,6 +11,34 @@ export type ConversationMessageRow =
 export type SessionRow = Database["public"]["Tables"]["sessions"]["Row"];
 export type SessionTimerBlockRow =
   Database["public"]["Tables"]["session_timer_blocks"]["Row"];
+export type SessionHistoryCursor = {
+  createdAt: string;
+  id: string;
+};
+
+export type SessionHistoryItem = Pick<
+  SessionRow,
+  | "created_at"
+  | "energy_level"
+  | "feedback"
+  | "id"
+  | "source"
+  | "status"
+  | "stuck_on"
+  | "timer_ended_at"
+  | "timer_started_at"
+>;
+
+export type SessionDetailSection<T> = {
+  data: T | null;
+  error: string | null;
+};
+
+export type SessionDetailResult = {
+  messages: SessionDetailSection<ConversationMessageRow[]>;
+  session: SessionDetailSection<SessionRow | null>;
+  timerBlocks: SessionDetailSection<SessionTimerBlockRow[]>;
+};
 
 export type TimerMutationResult = {
   blockId?: string;
@@ -194,6 +222,10 @@ export async function loadTimerSession(sessionId: string) {
   return (data as SessionRow | null) ?? null;
 }
 
+export async function loadSessionRecord(sessionId: string) {
+  return loadTimerSession(sessionId);
+}
+
 export async function loadLatestTimerBlock(sessionId: string) {
   const { data, error } = await supabase
     .from("session_timer_blocks")
@@ -253,6 +285,112 @@ export async function loadRecentSessionSummaries(
     steps: parseSessionSteps(session.steps),
     stuckOn: session.stuck_on,
   })) as SessionSummary[];
+}
+
+export async function loadSessionHistoryPage(input: {
+  cursor?: SessionHistoryCursor | null;
+  pageSize?: number;
+  userId: string;
+}) {
+  const pageSize = input.pageSize ?? 50;
+  let query = supabase
+    .from("sessions")
+    .select(
+      "id, created_at, stuck_on, energy_level, feedback, source, status, timer_started_at, timer_ended_at",
+    )
+    .eq("user_id", input.userId)
+    .in("status", ["completed", "incomplete"])
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(pageSize + 1);
+
+  if (input.cursor) {
+    query = query.or(
+      [
+        `created_at.lt.${input.cursor.createdAt}`,
+        `and(created_at.eq.${input.cursor.createdAt},id.lt.${input.cursor.id})`,
+      ].join(","),
+    );
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (data ?? []) as SessionHistoryItem[];
+  const items = rows.slice(0, pageSize);
+  const lastItem = items.length > 0 ? items[items.length - 1] : null;
+
+  return {
+    items,
+    nextCursor:
+      rows.length > pageSize && lastItem
+        ? {
+            createdAt: lastItem.created_at,
+            id: lastItem.id,
+          }
+        : null,
+  };
+}
+
+function normalizeSectionResult<T>(
+  result: PromiseSettledResult<T>,
+  fallbackMessage: string,
+  options?: {
+    treatNullAsError?: boolean;
+  },
+): SessionDetailSection<T> {
+  if (result.status === "fulfilled") {
+    if ((options?.treatNullAsError ?? true) && result.value === null) {
+      return {
+        data: null,
+        error: fallbackMessage,
+      };
+    }
+
+    return {
+      data: result.value,
+      error: null,
+    };
+  }
+
+  const message =
+    result.reason instanceof Error && result.reason.message.trim().length > 0
+      ? result.reason.message
+      : fallbackMessage;
+
+  return {
+    data: null,
+    error: message,
+  };
+}
+
+export async function loadSessionDetail(sessionId: string): Promise<SessionDetailResult> {
+  const [sessionResult, messagesResult, timerBlocksResult] = await Promise.allSettled([
+    loadSessionRecord(sessionId),
+    loadConversationMessages(sessionId),
+    loadTimerBlocks(sessionId),
+  ]);
+
+  return {
+    messages: normalizeSectionResult(
+      messagesResult,
+      "Unable to load the transcript for this session.",
+    ),
+    session: normalizeSectionResult(
+      sessionResult,
+      "Unable to load this session summary.",
+      {
+        treatNullAsError: false,
+      },
+    ),
+    timerBlocks: normalizeSectionResult(
+      timerBlocksResult,
+      "Unable to load the timer timeline for this session.",
+    ),
+  };
 }
 
 export async function startTimerBlock(input: {

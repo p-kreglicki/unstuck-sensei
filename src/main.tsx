@@ -5,6 +5,7 @@ import { App } from "./App";
 import { AuthProvider } from "./hooks/useAuth";
 import { DetectionProvider } from "./hooks/useDetection";
 import { DetectionSyncBridge } from "./hooks/useDetectionSync";
+import { ProfileSettingsProvider } from "./hooks/useProfileSettings";
 import { TimerProvider } from "./hooks/useTimer";
 import "./main.css";
 
@@ -13,10 +14,12 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <AuthProvider>
       <TimerProvider>
         <DetectionProvider>
-          <DetectionSyncBridge />
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
+          <ProfileSettingsProvider>
+            <DetectionSyncBridge />
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          </ProfileSettingsProvider>
         </DetectionProvider>
       </TimerProvider>
     </AuthProvider>

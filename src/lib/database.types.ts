@@ -92,6 +92,7 @@ export type Database = {
           email_enabled: boolean | null;
           id: string;
           last_email_sent_at: string | null;
+          onboarding_completed_at: string | null;
           preferred_time: string | null;
           timezone: string | null;
           updated_at: string;
@@ -104,6 +105,7 @@ export type Database = {
           email_enabled?: boolean | null;
           id: string;
           last_email_sent_at?: string | null;
+          onboarding_completed_at?: string | null;
           preferred_time?: string | null;
           timezone?: string | null;
           updated_at?: string;
@@ -116,6 +118,7 @@ export type Database = {
           email_enabled?: boolean | null;
           id?: string;
           last_email_sent_at?: string | null;
+          onboarding_completed_at?: string | null;
           preferred_time?: string | null;
           timezone?: string | null;
           updated_at?: string;
