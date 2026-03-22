@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS public.account_delete_request_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- No RLS policies are defined for this table on purpose: the supported access
+-- path is consume_delete_account_rate_limit(), which runs as SECURITY DEFINER.
 ALTER TABLE public.account_delete_request_logs ENABLE ROW LEVEL SECURITY;
 
 CREATE INDEX IF NOT EXISTS account_delete_request_logs_user_created_idx
