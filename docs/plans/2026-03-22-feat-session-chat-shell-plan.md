@@ -390,11 +390,11 @@ Exit criteria:
 Goal: make the shell behave well under streaming, retry, countdown, and manual scrolling.
 
 Tasks:
-- [ ] Add a single scroll controller for bottom-stick behavior.
-- [ ] Use `useLayoutEffect` or equivalent pre-paint synchronization for append-and-scroll cases.
-- [ ] Preserve manual scroll position when the user scrolls away from the bottom.
+- [x] Add a single scroll controller for bottom-stick behavior.
+- [x] Use `useLayoutEffect` or equivalent pre-paint synchronization for append-and-scroll cases.
+- [x] Preserve manual scroll position when the user scrolls away from the bottom.
 - [ ] Ensure `useTimerCountdown()` remains isolated to the inline timer card.
-- [ ] Respect `prefers-reduced-motion` for smooth scrolling and decorative motion.
+- [x] Respect `prefers-reduced-motion` for smooth scrolling and decorative motion.
 - [ ] Verify focus transitions between composer, streamed assistant output, and inline controls.
 
 Primary files:
@@ -435,7 +435,7 @@ Exit criteria:
 - [x] Move energy selector into the thread
 - [x] Move steps actions into the thread
 - [x] Move timer and check-in cards into the thread
-- [ ] Add centralized scroll/focus handling
+- [x] Add centralized scroll/focus handling
 - [ ] Keep countdown re-renders isolated
 - [x] Add accessible log semantics
 - [ ] Update automated tests and manual validation notes
@@ -753,7 +753,7 @@ Mitigation:
 - [ ] Resumed drafts and older sessions still render a coherent thread even if some early turns must be synthesized.
 - [x] The conversation thread is exposed with appropriate live-region semantics for sequential updates.
 - [ ] Timer countdown updates do not cause the entire transcript to re-render every second.
-- [ ] Smooth scrolling and decorative motion degrade when reduced-motion is requested.
+- [x] Smooth scrolling and decorative motion degrade when reduced-motion is requested.
 
 ## Test Plan
 

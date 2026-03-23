@@ -56,12 +56,6 @@ type RecentSessionSummaries = Awaited<
   ReturnType<typeof loadRecentSessionSummaries>
 >;
 
-export type TranscriptRow = {
-  content: string;
-  id: string;
-  role: "assistant" | "user";
-};
-
 type UseSessionFlowOptions = {
   locationState: unknown;
 };
@@ -155,23 +149,6 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
       ? "The nudge noticed you were bouncing around. Name the task you were dodging."
       : null;
   const reminder = formatSessionReminder(recentSessions[0] ?? null);
-  const transcriptRows = useMemo(
-    () =>
-      messages.map((message) => ({
-        content: message.content,
-        id: message.id,
-        role: message.role,
-      })),
-    [messages],
-  );
-  const streamingTranscriptRow =
-    chat.state.isStreaming && chat.state.streamingText.length > 0
-      ? {
-          content: chat.state.streamingText,
-          id: "streaming",
-          role: "assistant" as const,
-        }
-      : null;
   const threadItems = useMemo(
     () =>
       deriveThreadItems({
@@ -392,8 +369,8 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     setStatusMessage(null);
 
     try {
-      const nextSession = sessionRow
-        ? await persistSessionPatch({
+      if (sessionRow) {
+        const nextSession = await persistSessionPatch({
             currentSession: sessionRow,
             patch: {
               source: sessionRow.source ?? requestedSource,
@@ -407,16 +384,10 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
               ? undefined
               : {
                   content: stuckOn,
-                  role: "user",
-                },
-          })
-        : await createSessionDraft({
-            source: requestedSource,
-            stuckOn,
-            userId: user.id,
+                role: "user",
+              },
           });
 
-      if ("nextSession" in nextSession) {
         setSessionRow(nextSession.nextSession);
         setStuckOnInput(nextSession.nextSession.stuck_on ?? stuckOn);
 
@@ -426,18 +397,23 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
           setMessages((current) => [...current, openingUserMessage]);
         }
 
-        return;
+      } else {
+        const nextSession = await createSessionDraft({
+          source: requestedSource,
+          stuckOn,
+          userId: user.id,
+        });
+
+        setSessionRow(nextSession);
+        setStuckOnInput(nextSession.stuck_on ?? stuckOn);
+
+        const userMessage = await insertConversationMessage({
+          content: stuckOn,
+          role: "user",
+          sessionId: nextSession.id,
+        });
+        setMessages((current) => [...current, userMessage]);
       }
-
-      setSessionRow(nextSession);
-      setStuckOnInput(nextSession.stuck_on ?? stuckOn);
-
-      const userMessage = await insertConversationMessage({
-        content: stuckOn,
-        role: "user",
-        sessionId: nextSession.id,
-      });
-      setMessages((current) => [...current, userMessage]);
     } catch (error) {
       setStatusMessage(toDisplayError(error, "Unable to save your draft session."));
     } finally {
@@ -957,10 +933,8 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     setStuckOnInput,
     statusMessage,
     steps,
-    streamingTranscriptRow,
     stuckOnInput,
     threadItems,
-    transcriptRows,
   };
 }
 
