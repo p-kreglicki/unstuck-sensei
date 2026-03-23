@@ -24,17 +24,29 @@ export function Timer({
   const remainingSecs = useTimerCountdown();
 
   return (
-    <section className="rounded-[28px] border border-teal-300/20 bg-teal-300/10 p-5">
-      <p className="text-xs uppercase tracking-[0.3em] text-teal-200/80">Work block</p>
-      <h2 className="mt-2 text-2xl font-semibold text-white">Stay with the next small move.</h2>
-      <div className="mt-5 rounded-[28px] border border-white/10 bg-slate-950/70 px-6 py-8 text-center">
+    <section className="rounded-[28px] border border-teal-300/20 bg-teal-300/10 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-teal-200/80">
+            Focus block
+          </p>
+          <h3 className="mt-2 text-lg font-semibold text-white">
+            Stay with the next small move.
+          </h3>
+        </div>
+        <span className="rounded-full border border-teal-200/20 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-teal-100/80">
+          Live
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-[24px] border border-white/10 bg-slate-950/70 px-6 py-8 text-center">
         <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Remaining</p>
-        <p className="mt-3 text-6xl font-semibold tracking-[0.08em] text-white">
+        <p className="mt-3 text-5xl font-semibold tracking-[0.08em] text-white">
           {formatRemaining(remainingSecs)}
         </p>
       </div>
 
-      <div className="mt-5 rounded-3xl border border-white/10 bg-slate-950/60 px-4 py-4 text-slate-100">
+      <div className="mt-4 rounded-[24px] border border-white/10 bg-slate-950/60 px-4 py-4 text-slate-100">
         <p className="text-xs uppercase tracking-[0.2em] text-teal-300/80">
           You&apos;re working on
         </p>
@@ -48,7 +60,7 @@ export function Timer({
       </p>
 
       <button
-        className="mt-5 w-full rounded-2xl border border-white/15 px-4 py-3 font-medium text-white transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-4 w-full rounded-2xl border border-white/15 px-4 py-3 font-medium text-white transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={isStopping}
         onClick={onStop}
         type="button"

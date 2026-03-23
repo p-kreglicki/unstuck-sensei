@@ -369,11 +369,11 @@ Exit criteria:
 Goal: keep the rest of the session flow inside the same conversation shell.
 
 Tasks:
-- [ ] Adapt `EnergySelector` for in-thread placement.
-- [ ] Adapt `StepsList` for in-thread placement with retry, reorder, and confirm actions intact.
-- [ ] Adapt `Timer` to render as an inline thread control card.
-- [ ] Adapt `CheckIn` to render as an inline thread control card.
-- [ ] Ensure transitions between compose, energy, clarifying, steps, timer, and check-in feel like one continuous thread.
+- [x] Adapt `EnergySelector` for in-thread placement.
+- [x] Adapt `StepsList` for in-thread placement with retry, reorder, and confirm actions intact.
+- [x] Adapt `Timer` to render as an inline thread control card.
+- [x] Adapt `CheckIn` to render as an inline thread control card.
+- [x] Ensure transitions between compose, energy, clarifying, steps, timer, and check-in feel like one continuous thread.
 
 Primary files:
 - `src/components/session/EnergySelector.tsx`
@@ -411,10 +411,10 @@ Exit criteria:
 Goal: lock in the new shell with test coverage for the important regressions.
 
 Tasks:
-- [ ] Update `Session.test.tsx` for thread rendering, composer behavior, and inline controls.
+- [x] Update `Session.test.tsx` for thread rendering, composer behavior, and inline controls.
 - [ ] Add tests for synthetic-turn derivation, including older resumed drafts.
 - [ ] Add coverage for streaming and partial assistant output inside the thread.
-- [ ] Add assertions for accessible log semantics.
+- [x] Add assertions for accessible log semantics.
 - [ ] Manually validate reduced motion, scroll behavior, and resume compatibility.
 
 Primary files:
@@ -432,9 +432,9 @@ Exit criteria:
 - [x] Synthesize missing early turns for old drafts
 - [x] Replace stacked session cards with one conversation shell
 - [x] Add fixed-height log region with bottom composer
-- [ ] Move energy selector into the thread
-- [ ] Move steps actions into the thread
-- [ ] Move timer and check-in cards into the thread
+- [x] Move energy selector into the thread
+- [x] Move steps actions into the thread
+- [x] Move timer and check-in cards into the thread
 - [ ] Add centralized scroll/focus handling
 - [ ] Keep countdown re-renders isolated
 - [x] Add accessible log semantics
@@ -740,18 +740,18 @@ Mitigation:
 
 ## Acceptance Criteria
 
-- [ ] The session route renders a fixed-height, internally scrollable conversation panel.
-- [ ] The opening prompt appears as a visible assistant turn in the thread.
+- [x] The session route renders a fixed-height, internally scrollable conversation panel.
+- [x] The opening prompt appears as a visible assistant turn in the thread.
 - [ ] The user’s opening answer appears immediately as a right-aligned chat turn when submitted.
-- [ ] The bottom composer is used for free-text replies in compose and clarifying stages.
-- [ ] Energy selection appears inside the same conversation panel and does not break the thread into a separate card stack.
+- [x] The bottom composer is used for free-text replies in compose and clarifying stages.
+- [x] Energy selection appears inside the same conversation panel and does not break the thread into a separate card stack.
 - [ ] Assistant streaming text appears as an in-thread bubble.
-- [ ] Clarifying questions and clarifying replies read as normal chat turns.
-- [ ] Generated steps, retry, reorder, and confirm controls appear inside the same conversation panel.
-- [ ] Timer and check-in controls remain inside the same conversation panel.
+- [x] Clarifying questions and clarifying replies read as normal chat turns.
+- [x] Generated steps, retry, reorder, and confirm controls appear inside the same conversation panel.
+- [x] Timer and check-in controls remain inside the same conversation panel.
 - [ ] Existing session persistence, retry, timer, and check-in behavior continue to work.
 - [ ] Resumed drafts and older sessions still render a coherent thread even if some early turns must be synthesized.
-- [ ] The conversation thread is exposed with appropriate live-region semantics for sequential updates.
+- [x] The conversation thread is exposed with appropriate live-region semantics for sequential updates.
 - [ ] Timer countdown updates do not cause the entire transcript to re-render every second.
 - [ ] Smooth scrolling and decorative motion degrade when reduced-motion is requested.
 

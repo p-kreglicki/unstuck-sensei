@@ -25,16 +25,26 @@ export function CheckIn({
   onFeedback,
 }: CheckInProps) {
   return (
-    <section className="rounded-[28px] border border-amber-300/20 bg-amber-300/10 p-5">
-      <p className="text-xs uppercase tracking-[0.3em] text-amber-200/80">Check-in</p>
-      <h2 className="mt-2 text-2xl font-semibold text-white">
-        Time&apos;s up. How did it go?
-      </h2>
+    <section className="rounded-[28px] border border-amber-300/20 bg-amber-300/10 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-amber-200/80">
+            Check-in
+          </p>
+          <h3 className="mt-2 text-lg font-semibold text-white">
+            Time&apos;s up. How did it go?
+          </h3>
+        </div>
+        <span className="rounded-full border border-amber-200/20 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-amber-100/80">
+          {canExtend ? "1 extension left" : "Extension used"}
+        </span>
+      </div>
+
       <p className="mt-3 text-sm leading-6 text-amber-50/80">
         The point was to begin. Give the honest version and keep moving.
       </p>
 
-      <div className="mt-5 rounded-3xl border border-white/10 bg-slate-950/60 px-4 py-4 text-slate-100">
+      <div className="mt-4 rounded-[24px] border border-white/10 bg-slate-950/60 px-4 py-4 text-slate-100">
         <p className="text-xs uppercase tracking-[0.2em] text-amber-200/80">
           First step
         </p>
@@ -43,11 +53,11 @@ export function CheckIn({
         </p>
       </div>
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-4 space-y-3">
         {feedbackOptions.map((option) => (
           <button
             key={option.feedback}
-            className="w-full rounded-2xl bg-white/8 px-4 py-3 text-left font-medium text-white transition hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-[22px] border border-white/10 bg-slate-950/65 px-4 py-3 text-left font-medium text-white transition hover:border-amber-200/20 hover:bg-slate-950/80 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSubmitting}
             onClick={() => onFeedback(option.feedback)}
             type="button"
@@ -59,7 +69,7 @@ export function CheckIn({
 
       {canExtend ? (
         <button
-          className="mt-5 w-full rounded-2xl border border-white/15 px-4 py-3 font-medium text-white transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-4 w-full rounded-2xl border border-white/15 px-4 py-3 font-medium text-white transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isSubmitting}
           onClick={onExtend}
           type="button"

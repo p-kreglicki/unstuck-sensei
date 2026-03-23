@@ -46,9 +46,9 @@ export function SessionConversationShell({
               const renderedControl = renderControl?.(item.control) ?? null;
 
               return renderedControl ? (
-                <div key={item.id} className="pt-2">
-                  {renderedControl}
-                </div>
+                <article key={item.id} className="flex justify-start pt-2">
+                  <div className="w-full max-w-[86%]">{renderedControl}</div>
+                </article>
               ) : null;
             }
 
