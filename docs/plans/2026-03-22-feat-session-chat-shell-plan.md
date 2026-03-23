@@ -348,11 +348,11 @@ Exit criteria:
 Goal: replace the stacked card layout with one fixed-height conversation surface.
 
 Tasks:
-- [ ] Create `SessionConversationShell.tsx` or equivalent shell component.
-- [ ] Implement a fixed-height conversation region with internal scrolling.
-- [ ] Add the bottom composer for compose and clarifying stages.
-- [ ] Render assistant and user turns with clear left/right alignment and differentiated bubble styling.
-- [ ] Add labeled log semantics for the conversation region.
+- [x] Create `SessionConversationShell.tsx` or equivalent shell component.
+- [x] Implement a fixed-height conversation region with internal scrolling.
+- [x] Add the bottom composer for compose and clarifying stages.
+- [x] Render assistant and user turns with clear left/right alignment and differentiated bubble styling.
+- [x] Add labeled log semantics for the conversation region.
 
 Primary files:
 - `src/pages/Session.tsx`
@@ -430,14 +430,14 @@ Exit criteria:
 - [x] Introduce thread item types and derivation logic
 - [x] Persist opening user turn at initial submit
 - [x] Synthesize missing early turns for old drafts
-- [ ] Replace stacked session cards with one conversation shell
-- [ ] Add fixed-height log region with bottom composer
+- [x] Replace stacked session cards with one conversation shell
+- [x] Add fixed-height log region with bottom composer
 - [ ] Move energy selector into the thread
 - [ ] Move steps actions into the thread
 - [ ] Move timer and check-in cards into the thread
 - [ ] Add centralized scroll/focus handling
 - [ ] Keep countdown re-renders isolated
-- [ ] Add accessible log semantics
+- [x] Add accessible log semantics
 - [ ] Update automated tests and manual validation notes
 
 ## Execution Plan
