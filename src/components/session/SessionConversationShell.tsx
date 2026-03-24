@@ -27,6 +27,14 @@ function prefersReducedMotion() {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
+function shouldUseInstantScroll(item: SessionThreadItem | undefined) {
+  if (prefersReducedMotion()) {
+    return true;
+  }
+
+  return item?.kind === "message" && item.status === "streaming";
+}
+
 export function SessionConversationShell({
   composer,
   items,
@@ -40,8 +48,10 @@ export function SessionConversationShell({
       return;
     }
 
+    const lastItem = items[items.length - 1];
+
     bottomRef.current?.scrollIntoView?.({
-      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      behavior: shouldUseInstantScroll(lastItem) ? "auto" : "smooth",
       block: "end",
       inline: "nearest",
     });
