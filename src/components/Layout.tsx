@@ -1,6 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router";
+import { NavLink, Outlet, useLocation } from "react-router";
 import { useAuth } from "../hooks/useAuth";
 import { type DetectionState, useDetection } from "../hooks/useDetection";
 import { formatError } from "../lib/formatError";
@@ -91,7 +91,10 @@ function DetectionDebugPanel() {
   }
 
   return (
-    <section className="mt-6 rounded-[28px] border border-amber-400/20 bg-amber-400/10 p-4">
+    <section
+      className="mt-6 rounded-[28px] border border-amber-400/20 bg-amber-400/10 p-4"
+      id="debug-panel"
+    >
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-amber-200/80">Debug</p>
@@ -139,22 +142,30 @@ const detectionStatusLabels: Record<DetectionState["status"], string> = {
 };
 
 export function Layout() {
+  const location = useLocation();
   const { isLoading, user, signOut } = useAuth();
   const { state } = useDetection();
+  const [isDebugPanelVisible, setIsDebugPanelVisible] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const isSessionRoute = location.pathname === "/";
+  const isSettingsRoute = location.pathname === "/settings";
+  const showDebugToggle = import.meta.env.DEV && isTauri();
+  const routeContentClassName = isSessionRoute
+    ? "mt-6 flex min-h-0 flex-1 overflow-hidden"
+    : "mt-6 min-h-0 flex-1 overflow-y-auto pr-1";
 
   return (
     <div className="min-h-screen bg-transparent px-4 py-5 text-slate-100">
-      <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-md flex-col rounded-[32px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/50 backdrop-blur">
+      <div
+        className="mx-auto flex h-[calc(100vh-2.5rem)] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-[32px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/50 backdrop-blur"
+        data-testid="app-frame"
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
               Unstuck Sensei
             </p>
-            <h1 className="mt-2 text-2xl font-semibold text-white">
-              Foundation Shell
-            </h1>
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="mt-3 text-sm text-slate-400">
               A lightweight desktop coach that notices friction and helps you get unstuck.
             </p>
           </div>
@@ -195,12 +206,16 @@ export function Layout() {
           ))}
         </nav>
 
-        <div className={`mt-6 flex items-center justify-between text-sm text-slate-300 ${interactivePanelClassName}`}>
-          <span className="truncate">{user?.email ?? "Not signed in"}</span>
-          <span className="rounded-full bg-emerald-400/15 px-2.5 py-1 text-xs font-medium text-emerald-300">
-            {detectionStatusLabels[state.status]}
-          </span>
-        </div>
+        {isSettingsRoute ? (
+          <div
+            className={`mt-6 flex items-center justify-between text-sm text-slate-300 ${interactivePanelClassName}`}
+          >
+            <span className="truncate">{user?.email ?? "Not signed in"}</span>
+            <span className="rounded-full bg-emerald-400/15 px-2.5 py-1 text-xs font-medium text-emerald-300">
+              {detectionStatusLabels[state.status]}
+            </span>
+          </div>
+        ) : null}
 
         {statusMessage ? (
           <p className="mt-4 rounded-[18px] border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
@@ -210,11 +225,28 @@ export function Layout() {
 
         <DetectionNudgeBanner />
 
-        {import.meta.env.DEV && isTauri() ? <DetectionDebugPanel /> : null}
-
-        <div className="mt-6 flex-1">
+        <div className={routeContentClassName} data-testid="route-content">
           <Outlet />
         </div>
+
+        {showDebugToggle && isDebugPanelVisible ? <DetectionDebugPanel /> : null}
+
+        {showDebugToggle ? (
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              aria-controls="debug-panel"
+              aria-expanded={isDebugPanelVisible}
+              className="text-xs uppercase tracking-[0.3em] text-amber-200/80 transition hover:text-amber-100"
+              onClick={() => setIsDebugPanelVisible((current) => !current)}
+              type="button"
+            >
+              Debug
+            </button>
+            <span className="rounded-full border border-amber-300/20 px-2.5 py-1 text-[11px] text-amber-100/70">
+              Dev only
+            </span>
+          </div>
+        ) : null}
       </div>
     </div>
   );

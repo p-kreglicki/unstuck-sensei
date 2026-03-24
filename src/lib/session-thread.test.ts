@@ -129,6 +129,73 @@ describe("deriveThreadItems", () => {
     ]);
   });
 
+  it("keeps older resumed steps drafts coherent when early transcript rows are missing", () => {
+    expect(
+      deriveThreadItems({
+        chatState: {
+          isStreaming: false,
+          streamingText: "",
+        },
+        currentStage: "steps",
+        latestTimerBlock: null,
+        messages: [
+          createConversationMessageRow({
+            content: "Start with the checklist.",
+            id: "message-2",
+            role: "assistant",
+          }),
+        ],
+        sessionRow: createSessionRow({
+          energy_level: "medium",
+        }),
+        steps: [{ id: "step-1", text: "Open the checklist." }],
+      }),
+    ).toEqual([
+      {
+        content: "What are you stuck on?",
+        id: "prompt:opening",
+        kind: "prompt",
+        prompt: "opening",
+        role: "assistant",
+        synthetic: true,
+      },
+      {
+        content: "Ship the first build",
+        id: "synthetic:user-opening",
+        kind: "message",
+        persisted: false,
+        role: "user",
+      },
+      {
+        content: "What kind of energy do you have right now?",
+        id: "prompt:energy",
+        kind: "prompt",
+        prompt: "energy",
+        role: "assistant",
+        synthetic: true,
+      },
+      {
+        content: "Medium",
+        id: "synthetic:user-energy",
+        kind: "message",
+        persisted: false,
+        role: "user",
+      },
+      {
+        content: "Start with the checklist.",
+        id: "message-2",
+        kind: "message",
+        persisted: true,
+        role: "assistant",
+      },
+      {
+        control: "steps",
+        id: "control:steps",
+        kind: "control",
+      },
+    ]);
+  });
+
   it("preserves persisted opening messages and adds the synthetic energy reply", () => {
     expect(
       deriveThreadItems({

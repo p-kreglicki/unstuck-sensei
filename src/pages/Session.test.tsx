@@ -302,6 +302,70 @@ describe("Session", () => {
     expect(screen.getByRole("button", { name: /Low/ })).toBeInTheDocument();
   });
 
+  it("renders partial assistant streaming output inside the conversation shell", async () => {
+    useChatMock.mockReturnValue({
+      cancel: vi.fn(),
+      retry: vi.fn(),
+      sendClarification: vi.fn(),
+      sendInitial: vi.fn(),
+      state: {
+        error: null,
+        isStreaming: true,
+        streamingText: "Still thinking through the smallest first move...",
+        structuredResult: null,
+      },
+    });
+    loadRecentSessionSummariesMock.mockResolvedValue([]);
+    loadActiveSessionDraftMock.mockResolvedValue({
+      checked_in_at: null,
+      clarifying_answer: null,
+      clarifying_question: null,
+      created_at: "2026-03-22T09:00:00.000Z",
+      energy_level: "medium",
+      feedback: null,
+      id: "session-1",
+      source: "manual",
+      status: "active",
+      steps: null,
+      stuck_on: "Ship the onboarding email",
+      timer_extended: false,
+      timer_revision: 0,
+      updated_at: "2026-03-22T09:00:00.000Z",
+      user_id: "user-1",
+    });
+    loadConversationMessagesMock.mockResolvedValue([
+      {
+        content: "Ship the onboarding email",
+        created_at: "2026-03-22T09:00:01.000Z",
+        id: "message-1",
+        role: "user",
+        session_id: "session-1",
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <Session />
+      </MemoryRouter>,
+    );
+
+    const conversationLog = await screen.findByRole("log", {
+      name: "Conversation",
+    });
+
+    expect(
+      within(conversationLog).getByText(
+        "Still thinking through the smallest first move...",
+      ),
+    ).toBeInTheDocument();
+    expect(within(conversationLog).getByText("Streaming")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: "Pick the amount of push that matches what you can actually do.",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps clarifying replies in the same shell composer", async () => {
     loadRecentSessionSummariesMock.mockResolvedValue([]);
     loadActiveSessionDraftMock.mockResolvedValue({
