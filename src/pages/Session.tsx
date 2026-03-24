@@ -88,6 +88,7 @@ export function Session() {
         <LoadingCard />
       ) : (
         <SessionConversationShell
+          activeStage={flow.currentStage}
           composer={composer}
           items={flow.threadItems}
           renderControl={renderControl}

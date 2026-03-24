@@ -251,6 +251,7 @@ describe("Session", () => {
     expect(within(conversationLog).getByText("What are you stuck on?")).toBeInTheDocument();
     expect(screen.getByLabelText("The sticky task")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Keep going" })).toBeInTheDocument();
+    expect(useTimerCountdownMock).not.toHaveBeenCalled();
   });
 
   it("renders energy selection inside the conversation shell", async () => {
@@ -527,6 +528,7 @@ describe("Session", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stop timer" })).toBeInTheDocument();
+    expect(useTimerCountdownMock).toHaveBeenCalledTimes(1);
   });
 
   it("renders the check-in controls inline in the conversation shell", async () => {

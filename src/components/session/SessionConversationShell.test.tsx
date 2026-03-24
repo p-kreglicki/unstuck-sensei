@@ -104,7 +104,9 @@ describe("SessionConversationShell", () => {
   });
 
   it("auto-scrolls when new thread content appears and the user is near the bottom", () => {
-    const { rerender } = render(<SessionConversationShell items={createItems()} />);
+    const { rerender } = render(
+      <SessionConversationShell activeStage="compose" items={createItems()} />,
+    );
     const conversationLog = screen.getByRole("log", {
       name: "Conversation",
     });
@@ -119,6 +121,7 @@ describe("SessionConversationShell", () => {
 
     rerender(
       <SessionConversationShell
+        activeStage="steps"
         items={createItems([
           {
             content: "Here are the next steps.",
@@ -139,7 +142,9 @@ describe("SessionConversationShell", () => {
   });
 
   it("does not auto-scroll when the user has moved away from the bottom", () => {
-    const { rerender } = render(<SessionConversationShell items={createItems()} />);
+    const { rerender } = render(
+      <SessionConversationShell activeStage="compose" items={createItems()} />,
+    );
     const conversationLog = screen.getByRole("log", {
       name: "Conversation",
     });
@@ -154,6 +159,7 @@ describe("SessionConversationShell", () => {
 
     rerender(
       <SessionConversationShell
+        activeStage="energy"
         items={createItems([
           {
             content: "Still thinking...",
@@ -171,7 +177,9 @@ describe("SessionConversationShell", () => {
   });
 
   it("uses instant scrolling behavior while the latest message is streaming", () => {
-    const { rerender } = render(<SessionConversationShell items={createItems()} />);
+    const { rerender } = render(
+      <SessionConversationShell activeStage="compose" items={createItems()} />,
+    );
     const conversationLog = screen.getByRole("log", {
       name: "Conversation",
     });
@@ -186,6 +194,7 @@ describe("SessionConversationShell", () => {
 
     rerender(
       <SessionConversationShell
+        activeStage="energy"
         items={createItems([
           {
             content: "Still thinking...",
@@ -209,7 +218,9 @@ describe("SessionConversationShell", () => {
   it("uses instant scrolling behavior when reduced motion is preferred", () => {
     matchMediaMock.mockImplementation(() => createMediaQueryList(true));
 
-    const { rerender } = render(<SessionConversationShell items={createItems()} />);
+    const { rerender } = render(
+      <SessionConversationShell activeStage="compose" items={createItems()} />,
+    );
     const conversationLog = screen.getByRole("log", {
       name: "Conversation",
     });
@@ -224,6 +235,7 @@ describe("SessionConversationShell", () => {
 
     rerender(
       <SessionConversationShell
+        activeStage="steps"
         items={createItems([
           {
             content: "Ready when you are.",
@@ -241,5 +253,107 @@ describe("SessionConversationShell", () => {
       block: "end",
       inline: "nearest",
     });
+  });
+
+  it("focuses the composer on text stages and moves focus to inline controls on stage changes", () => {
+    const { rerender } = render(
+      <SessionConversationShell
+        activeStage="compose"
+        composer={<textarea aria-label="Session reply" />}
+        items={createItems()}
+      />,
+    );
+
+    const composer = screen.getByLabelText("Session reply");
+    expect(composer).toHaveFocus();
+
+    rerender(
+      <SessionConversationShell
+        activeStage="energy"
+        items={[
+          ...createItems(),
+          {
+            control: "energy",
+            id: "control:energy",
+            kind: "control",
+          },
+        ]}
+        renderControl={() => (
+          <div>
+            <button type="button">Low</button>
+            <button type="button">Medium</button>
+          </div>
+        )}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Low" })).toHaveFocus();
+
+    rerender(
+      <SessionConversationShell
+        activeStage="clarifying"
+        composer={<textarea aria-label="Clarifying reply" />}
+        items={createItems()}
+      />,
+    );
+
+    expect(screen.getByLabelText("Clarifying reply")).toHaveFocus();
+  });
+
+  it("does not steal focus when streaming output updates inside the current control stage", () => {
+    const { rerender } = render(
+      <SessionConversationShell
+        activeStage="energy"
+        items={[
+          ...createItems(),
+          {
+            control: "energy",
+            id: "control:energy",
+            kind: "control",
+          },
+        ]}
+        renderControl={() => (
+          <div>
+            <button type="button">Low</button>
+            <button type="button">Medium</button>
+          </div>
+        )}
+      />,
+    );
+
+    const mediumButton = screen.getByRole("button", { name: "Medium" });
+    mediumButton.focus();
+    expect(mediumButton).toHaveFocus();
+
+    rerender(
+      <SessionConversationShell
+        activeStage="energy"
+        items={[
+          ...createItems([
+            {
+              content: "Still thinking...",
+              id: "message:streaming",
+              kind: "message",
+              persisted: false,
+              role: "assistant",
+              status: "streaming",
+            },
+          ]),
+          {
+            control: "energy",
+            id: "control:energy",
+            kind: "control",
+          },
+        ]}
+        renderControl={() => (
+          <div>
+            <button type="button">Low</button>
+            <button type="button">Medium</button>
+          </div>
+        )}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Medium" })).toHaveFocus();
   });
 });
