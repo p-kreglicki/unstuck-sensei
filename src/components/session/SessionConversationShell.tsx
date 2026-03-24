@@ -53,6 +53,18 @@ function focusFirstElement(container: HTMLDivElement | null) {
   }
 }
 
+function SenseiAvatar() {
+  return (
+    <div
+      aria-hidden="true"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.28),rgba(148,163,184,0.14)_45%,rgba(15,23,42,0.92)_100%)] text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-100 shadow-[0_4px_12px_rgba(2,6,23,0.18)]"
+      data-testid="sensei-avatar"
+    >
+      S
+    </div>
+  );
+}
+
 export function SessionConversationShell({
   activeStage,
   composer,
@@ -105,7 +117,7 @@ export function SessionConversationShell({
         <p className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
           Session chat
         </p>
-        <h2 id="conversation-heading" className="mt-2 text-lg font-semibold text-white">
+        <h2 id="conversation-heading" className="sr-only">
           Conversation
         </h2>
       </div>
@@ -145,28 +157,36 @@ export function SessionConversationShell({
                 key={item.id}
                 className={isUser ? "flex justify-end" : "flex justify-start"}
               >
-                <div
-                  className={[
-                    "max-w-[86%] rounded-[28px] border px-4 py-4 shadow-sm",
-                    isUser
-                      ? "border-white/10 bg-slate-950/80 text-slate-100"
-                      : isPrompt
-                        ? "border-white/10 bg-white/[0.05] text-slate-100"
-                        : "border-teal-300/20 bg-teal-300/10 text-teal-50",
-                  ].join(" ")}
-                >
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="text-[11px] uppercase tracking-[0.24em] text-slate-400">
-                      {roleLabels[item.role]}
-                    </span>
-                    {isStreaming ? (
-                      <span className="text-[11px] uppercase tracking-[0.24em] text-teal-100/70">
-                        Streaming
-                      </span>
-                    ) : null}
+                {isUser ? (
+                  <div
+                    className={[
+                      "max-w-[86%] rounded-[28px] border px-4 py-4 shadow-sm",
+                      "border-white/10 bg-slate-950/80 text-slate-100",
+                    ].join(" ")}
+                  >
+                    <p className="whitespace-pre-wrap text-sm leading-6">{item.content}</p>
                   </div>
-                  <p className="whitespace-pre-wrap text-sm leading-6">{item.content}</p>
-                </div>
+                ) : (
+                  <div className="grid max-w-[92%] grid-cols-[auto_minmax(0,1fr)] items-end gap-2">
+                    <SenseiAvatar />
+                    <div
+                      className={[
+                        "min-w-0 max-w-[calc(100%-2.75rem)] rounded-[24px] border px-4 py-3 shadow-sm",
+                        isPrompt
+                          ? "border-white/10 bg-white/[0.05] text-slate-100"
+                          : "border-teal-300/20 bg-teal-300/10 text-teal-50",
+                      ].join(" ")}
+                    >
+                      <p className="whitespace-pre-wrap text-sm leading-6">{item.content}</p>
+                      {isStreaming ? (
+                        <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-teal-100/70">
+                          <span className="h-1.5 w-1.5 rounded-full bg-teal-200/80" />
+                          <span>Streaming</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
               </article>
             );
           })}

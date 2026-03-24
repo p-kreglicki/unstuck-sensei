@@ -51,7 +51,7 @@ export function StepsList({
                 {index + 1}
               </div>
               <div className="flex-1">
-                <p className="text-base leading-7 text-slate-100">{step.text}</p>
+                <p className="text-sm leading-6 text-slate-100">{step.text}</p>
                 <div className="mt-4 flex gap-2">
                   <button
                     className="rounded-full border border-white/10 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-slate-300 transition hover:border-white/20 hover:bg-white/5 disabled:opacity-40"

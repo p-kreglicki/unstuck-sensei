@@ -412,8 +412,8 @@ Goal: lock in the new shell with test coverage for the important regressions.
 
 Tasks:
 - [x] Update `Session.test.tsx` for thread rendering, composer behavior, and inline controls.
-- [ ] Add tests for synthetic-turn derivation, including older resumed drafts.
-- [ ] Add coverage for streaming and partial assistant output inside the thread.
+- [x] Add tests for synthetic-turn derivation, including older resumed drafts.
+- [x] Add coverage for streaming and partial assistant output inside the thread.
 - [x] Add assertions for accessible log semantics.
 - [ ] Manually validate reduced motion, scroll behavior, and resume compatibility.
 
@@ -745,12 +745,12 @@ Mitigation:
 - [ ] The user’s opening answer appears immediately as a right-aligned chat turn when submitted.
 - [x] The bottom composer is used for free-text replies in compose and clarifying stages.
 - [x] Energy selection appears inside the same conversation panel and does not break the thread into a separate card stack.
-- [ ] Assistant streaming text appears as an in-thread bubble.
+- [x] Assistant streaming text appears as an in-thread bubble.
 - [x] Clarifying questions and clarifying replies read as normal chat turns.
 - [x] Generated steps, retry, reorder, and confirm controls appear inside the same conversation panel.
 - [x] Timer and check-in controls remain inside the same conversation panel.
 - [ ] Existing session persistence, retry, timer, and check-in behavior continue to work.
-- [ ] Resumed drafts and older sessions still render a coherent thread even if some early turns must be synthesized.
+- [x] Resumed drafts and older sessions still render a coherent thread even if some early turns must be synthesized.
 - [x] The conversation thread is exposed with appropriate live-region semantics for sequential updates.
 - [x] Timer countdown updates do not cause the entire transcript to re-render every second.
 - [x] Smooth scrolling and decorative motion degrade when reduced-motion is requested.
@@ -792,8 +792,10 @@ Mitigation:
   - `npm test -- src/pages/Session.test.tsx`
   - `npm test --`
 - Manual validation status on 2026-03-24:
-  - Reduced motion and scroll-at-bottom/away behavior were verified through focused component tests in this branch.
-  - Resume compatibility and screen-reader announcement behavior still need interactive manual smoke validation before final PR closeout.
+  - Focused component tests in this branch cover reduced motion and scroll-at-bottom/away behavior.
+  - Interactive Tauri smoke validation surfaced a parent-layout height leak that let the session shell grow with transcript length; the fix moved to the routed app frame instead of the shell component itself.
+  - Resume compatibility was verified against the live Tauri window through accessibility inspection after relaunch.
+  - Screen-reader announcement behavior still needs final interactive manual smoke validation before PR closeout.
 
 ## Implementation Order
 

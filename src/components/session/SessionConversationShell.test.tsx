@@ -255,6 +255,15 @@ describe("SessionConversationShell", () => {
     });
   });
 
+  it("renders assistant messages with a sensei avatar beside the bubble", () => {
+    render(
+      <SessionConversationShell activeStage="compose" items={createItems()} />,
+    );
+
+    expect(screen.getByTestId("sensei-avatar")).toBeInTheDocument();
+    expect(screen.getByText("What are you stuck on?")).toBeInTheDocument();
+  });
+
   it("focuses the composer on text stages and moves focus to inline controls on stage changes", () => {
     const { rerender } = render(
       <SessionConversationShell
