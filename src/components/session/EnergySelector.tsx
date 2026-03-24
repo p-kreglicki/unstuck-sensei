@@ -36,14 +36,27 @@ export function EnergySelector({
   value,
 }: EnergySelectorProps) {
   return (
-    <section className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-      <p className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
-        Step 2
+    <section className="rounded-[28px] border border-white/10 bg-white/[0.05] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
+            Choose your energy
+          </p>
+          <h3 className="mt-2 text-lg font-semibold text-white">
+            Pick the amount of push that matches what you can actually do.
+          </h3>
+        </div>
+        <span className="rounded-full border border-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-slate-400">
+          Step 2
+        </span>
+      </div>
+
+      <p className="mt-3 text-sm leading-6 text-slate-400">
+        Honest beats ambitious here. The smaller right move is better than the
+        perfect one you won&apos;t start.
       </p>
-      <h2 className="mt-2 text-2xl font-semibold text-white">
-        What kind of energy do you have right now?
-      </h2>
-      <div className="mt-5 space-y-3">
+
+      <div className="mt-4 space-y-3">
         {options.map((option) => {
           const active = value === option.value;
 
@@ -51,7 +64,7 @@ export function EnergySelector({
             <button
               key={option.value}
               className={[
-                "w-full rounded-3xl border px-4 py-4 text-left transition",
+                "w-full rounded-[24px] border px-4 py-4 text-left transition",
                 active
                   ? "border-teal-300 bg-teal-300/15 text-white"
                   : "border-white/10 bg-slate-950/60 text-slate-200 hover:border-white/20 hover:bg-slate-950/80",
@@ -75,7 +88,7 @@ export function EnergySelector({
       </div>
 
       <button
-        className="mt-5 w-full rounded-2xl bg-teal-400 px-4 py-3 font-medium text-slate-950 transition hover:bg-teal-300 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-4 w-full rounded-2xl bg-teal-400 px-4 py-3 font-medium text-slate-950 transition hover:bg-teal-300 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={isSubmitting || !value}
         onClick={onSubmit}
         type="button"

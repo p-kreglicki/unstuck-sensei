@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import type {
   SessionThreadControlItem,
   SessionThreadItem,
@@ -14,12 +14,39 @@ const roleLabels = {
   assistant: "Sensei",
   user: "You",
 } as const;
+const STICKY_SCROLL_THRESHOLD_PX = 96;
+
+function isNearBottom(element: HTMLDivElement) {
+  return (
+    element.scrollHeight - element.scrollTop - element.clientHeight <=
+    STICKY_SCROLL_THRESHOLD_PX
+  );
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
 
 export function SessionConversationShell({
   composer,
   items,
   renderControl,
 }: SessionConversationShellProps) {
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
+
+  useLayoutEffect(() => {
+    if (!shouldStickToBottomRef.current) {
+      return;
+    }
+
+    bottomRef.current?.scrollIntoView?.({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "end",
+      inline: "nearest",
+    });
+  }, [items]);
+
   return (
     <section
       aria-labelledby="conversation-heading"
@@ -38,6 +65,9 @@ export function SessionConversationShell({
         aria-labelledby="conversation-heading"
         aria-relevant="additions text"
         className="min-h-0 flex-1 overflow-y-auto px-4 py-5"
+        onScroll={(event) => {
+          shouldStickToBottomRef.current = isNearBottom(event.currentTarget);
+        }}
         role="log"
       >
         <div className="space-y-4">
@@ -46,9 +76,9 @@ export function SessionConversationShell({
               const renderedControl = renderControl?.(item.control) ?? null;
 
               return renderedControl ? (
-                <div key={item.id} className="pt-2">
-                  {renderedControl}
-                </div>
+                <article key={item.id} className="flex justify-start pt-2">
+                  <div className="w-full max-w-[86%]">{renderedControl}</div>
+                </article>
               ) : null;
             }
 
@@ -86,6 +116,7 @@ export function SessionConversationShell({
               </article>
             );
           })}
+          <div ref={bottomRef} />
         </div>
       </div>
 

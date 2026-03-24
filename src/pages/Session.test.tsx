@@ -354,4 +354,282 @@ describe("Session", () => {
     expect(screen.getByLabelText("Clarifying reply")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Give me the steps" })).toBeInTheDocument();
   });
+
+  it("renders generated steps inline in the conversation shell", async () => {
+    loadRecentSessionSummariesMock.mockResolvedValue([]);
+    loadActiveSessionDraftMock.mockResolvedValue({
+      checked_in_at: null,
+      clarifying_answer: null,
+      clarifying_question: null,
+      created_at: "2026-03-22T09:00:00.000Z",
+      energy_level: "medium",
+      feedback: null,
+      id: "session-1",
+      source: "manual",
+      status: "active",
+      steps: [
+        {
+          id: "step-1",
+          text: "Open the email draft and write the first paragraph.",
+        },
+        {
+          id: "step-2",
+          text: "Choose the one CTA and remove the rest.",
+        },
+      ],
+      stuck_on: "Ship the onboarding email",
+      timer_extended: false,
+      timer_revision: 0,
+      updated_at: "2026-03-22T09:00:00.000Z",
+      user_id: "user-1",
+    });
+    loadConversationMessagesMock.mockResolvedValue([
+      {
+        content: "Ship the onboarding email",
+        created_at: "2026-03-22T09:00:01.000Z",
+        id: "message-1",
+        role: "user",
+        session_id: "session-1",
+      },
+      {
+        content: "Here are the first two moves.",
+        created_at: "2026-03-22T09:00:05.000Z",
+        id: "message-2",
+        role: "assistant",
+        session_id: "session-1",
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <Session />
+      </MemoryRouter>,
+    );
+
+    const conversationLog = await screen.findByRole("log", {
+      name: "Conversation",
+    });
+
+    expect(
+      within(conversationLog).getByText(
+        "Open the email draft and write the first paragraph.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(conversationLog).getByText("Choose the one CTA and remove the rest."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Start 25-minute timer" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the active timer inline in the conversation shell", async () => {
+    useTimerMock.mockReturnValue({
+      clearPendingSyncs: vi.fn(),
+      clearRuntime: vi.fn(),
+      extendTimer: vi.fn(),
+      getPendingSyncs: vi.fn().mockResolvedValue([]),
+      hydrateAwaitingCheckin: vi.fn(),
+      hydrateRunning: vi.fn(),
+      refreshStatus: vi.fn().mockResolvedValue({
+        currentBlockId: "block-1",
+        durationSecs: 1500,
+        extended: false,
+        remainingSecs: 900,
+        sessionId: "session-1",
+        status: "running",
+        timerRevision: 2,
+      }),
+      resolveCheckin: vi.fn(),
+      startTimer: vi.fn(),
+      state: {
+        currentBlockId: "block-1",
+        durationSecs: 1500,
+        extended: false,
+        remainingSecs: 900,
+        sessionId: "session-1",
+        status: "running",
+        timerRevision: 2,
+      },
+      stopTimer: vi.fn(),
+      withPendingSyncLock: vi.fn((work: () => Promise<unknown>) => work()),
+    });
+    useTimerCountdownMock.mockReturnValue(900);
+    loadRecentSessionSummariesMock.mockResolvedValue([]);
+    loadActiveTimerSessionMock.mockResolvedValue({
+      checked_in_at: null,
+      clarifying_answer: null,
+      clarifying_question: null,
+      created_at: "2026-03-22T09:00:00.000Z",
+      energy_level: "medium",
+      feedback: null,
+      id: "session-1",
+      source: "manual",
+      status: "active",
+      steps: [
+        {
+          id: "step-1",
+          text: "Open the email draft and write the first paragraph.",
+        },
+      ],
+      stuck_on: "Ship the onboarding email",
+      timer_duration_seconds: 1500,
+      timer_ended_at: null,
+      timer_extended: false,
+      timer_revision: 2,
+      timer_started_at: "2026-03-22T09:00:00.000Z",
+      updated_at: "2026-03-22T09:00:00.000Z",
+      user_id: "user-1",
+    });
+    loadLatestTimerBlockMock.mockResolvedValue({
+      block_index: 1,
+      created_at: "2026-03-22T09:00:00.000Z",
+      duration_seconds: 1500,
+      ended_at: null,
+      id: "block-1",
+      kind: "initial",
+      session_id: "session-1",
+      started_at: "2026-03-22T09:00:00.000Z",
+    });
+    loadConversationMessagesMock.mockResolvedValue([
+      {
+        content: "Ship the onboarding email",
+        created_at: "2026-03-22T09:00:01.000Z",
+        id: "message-1",
+        role: "user",
+        session_id: "session-1",
+      },
+      {
+        content: "Here are the first two moves.",
+        created_at: "2026-03-22T09:00:05.000Z",
+        id: "message-2",
+        role: "assistant",
+        session_id: "session-1",
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <Session />
+      </MemoryRouter>,
+    );
+
+    const conversationLog = await screen.findByRole("log", {
+      name: "Conversation",
+    });
+
+    expect(within(conversationLog).getByText("Focus block")).toBeInTheDocument();
+    expect(within(conversationLog).getByText("15:00")).toBeInTheDocument();
+    expect(
+      within(conversationLog).getByText(
+        "Open the email draft and write the first paragraph.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop timer" })).toBeInTheDocument();
+  });
+
+  it("renders the check-in controls inline in the conversation shell", async () => {
+    useTimerMock.mockReturnValue({
+      clearPendingSyncs: vi.fn(),
+      clearRuntime: vi.fn(),
+      extendTimer: vi.fn(),
+      getPendingSyncs: vi.fn().mockResolvedValue([]),
+      hydrateAwaitingCheckin: vi.fn(),
+      hydrateRunning: vi.fn(),
+      refreshStatus: vi.fn().mockResolvedValue({
+        currentBlockId: "block-1",
+        durationSecs: 1500,
+        extended: false,
+        remainingSecs: 0,
+        sessionId: "session-1",
+        status: "awaiting_checkin",
+        timerRevision: 2,
+      }),
+      resolveCheckin: vi.fn(),
+      startTimer: vi.fn(),
+      state: {
+        currentBlockId: "block-1",
+        durationSecs: 1500,
+        extended: false,
+        remainingSecs: 0,
+        sessionId: "session-1",
+        status: "awaiting_checkin",
+        timerRevision: 2,
+      },
+      stopTimer: vi.fn(),
+      withPendingSyncLock: vi.fn((work: () => Promise<unknown>) => work()),
+    });
+    loadRecentSessionSummariesMock.mockResolvedValue([]);
+    loadActiveTimerSessionMock.mockResolvedValue({
+      checked_in_at: null,
+      clarifying_answer: null,
+      clarifying_question: null,
+      created_at: "2026-03-22T09:00:00.000Z",
+      energy_level: "medium",
+      feedback: null,
+      id: "session-1",
+      source: "manual",
+      status: "active",
+      steps: [
+        {
+          id: "step-1",
+          text: "Open the email draft and write the first paragraph.",
+        },
+      ],
+      stuck_on: "Ship the onboarding email",
+      timer_duration_seconds: 1500,
+      timer_ended_at: "2026-03-22T09:25:00.000Z",
+      timer_extended: false,
+      timer_revision: 2,
+      timer_started_at: "2026-03-22T09:00:00.000Z",
+      updated_at: "2026-03-22T09:25:00.000Z",
+      user_id: "user-1",
+    });
+    loadLatestTimerBlockMock.mockResolvedValue({
+      block_index: 1,
+      created_at: "2026-03-22T09:00:00.000Z",
+      duration_seconds: 1500,
+      ended_at: "2026-03-22T09:25:00.000Z",
+      id: "block-1",
+      kind: "initial",
+      session_id: "session-1",
+      started_at: "2026-03-22T09:00:00.000Z",
+    });
+    loadConversationMessagesMock.mockResolvedValue([
+      {
+        content: "Ship the onboarding email",
+        created_at: "2026-03-22T09:00:01.000Z",
+        id: "message-1",
+        role: "user",
+        session_id: "session-1",
+      },
+      {
+        content: "Here are the first two moves.",
+        created_at: "2026-03-22T09:00:05.000Z",
+        id: "message-2",
+        role: "assistant",
+        session_id: "session-1",
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <Session />
+      </MemoryRouter>,
+    );
+
+    const conversationLog = await screen.findByRole("log", {
+      name: "Conversation",
+    });
+
+    expect(within(conversationLog).getByText("Check-in")).toBeInTheDocument();
+    expect(within(conversationLog).getByText("1 extension left")).toBeInTheDocument();
+    expect(
+      within(conversationLog).getByRole("button", { name: "Yes, I got started" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Keep going (+25 min)" }),
+    ).toBeInTheDocument();
+  });
 });

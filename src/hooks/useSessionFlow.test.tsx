@@ -256,13 +256,13 @@ describe("useSessionFlow", () => {
       sessionId: "session-2",
     });
     expect(result.current.currentStage).toBe("energy");
-    expect(result.current.transcriptRows).toEqual([
-      {
-        content: "Ship the first build",
-        id: "message-1",
-        role: "user",
-      },
-    ]);
+    expect(result.current.threadItems).toContainEqual({
+      content: "Ship the first build",
+      id: "message-1",
+      kind: "message",
+      persisted: true,
+      role: "user",
+    });
   });
 
   it("does not insert a duplicate opening user message when resuming a draft", async () => {
