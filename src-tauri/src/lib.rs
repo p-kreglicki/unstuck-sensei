@@ -11,6 +11,7 @@ use serde::Serialize;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    utils::config::Color,
     AppHandle, Emitter, Manager, RunEvent, WindowEvent, Wry,
 };
 
@@ -32,6 +33,7 @@ const MENU_STOP_TIMER: &str = "stop-timer";
 const MENU_OPEN_CHECKIN: &str = "open-checkin";
 const MENU_SETTINGS: &str = "settings";
 const MENU_QUIT: &str = "quit";
+const MAIN_WINDOW_BACKGROUND_COLOR: Color = Color(2, 6, 23, 255);
 
 #[derive(Clone, Serialize)]
 struct AppNavigatePayload {
@@ -337,6 +339,10 @@ pub fn run() {
 
             move |app| {
                 detection::platform::setup(&app.handle());
+
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_background_color(Some(MAIN_WINDOW_BACKGROUND_COLOR));
+                }
 
                 let tray_menu = build_tray_menu(
                     app,

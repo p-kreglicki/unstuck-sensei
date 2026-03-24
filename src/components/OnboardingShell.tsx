@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { TitleBarDragRegion } from "./TitleBarDragRegion";
 
 type OnboardingShellProps = {
   children: ReactNode;
@@ -9,7 +8,6 @@ export function OnboardingShell({ children }: OnboardingShellProps) {
   return (
     <div className="min-h-screen bg-transparent px-4 py-5 text-slate-100">
       <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-md flex-col justify-between rounded-[32px] border border-white/10 bg-slate-950/70 p-6 shadow-2xl shadow-slate-950/50 backdrop-blur">
-        <TitleBarDragRegion />
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
             Unstuck Sensei

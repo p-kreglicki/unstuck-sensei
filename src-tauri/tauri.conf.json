@@ -19,10 +19,10 @@
         "width": 420,
         "height": 680,
         "resizable": true,
-        "transparent": true,
-        "titleBarStyle": "Overlay",
+        "transparent": false,
+        "titleBarStyle": "Transparent",
         "theme": "Dark",
-        "hiddenTitle": true
+        "hiddenTitle": false
       }
     ],
     "security": {

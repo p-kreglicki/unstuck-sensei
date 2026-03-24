@@ -122,7 +122,7 @@ export function SessionConversationShell({
 
   return (
     <section
-      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.04] shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur"
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] border border-white/10 bg-white/[0.04] backdrop-blur"
     >
       <h2 id="conversation-heading" className="sr-only">
         Conversation
