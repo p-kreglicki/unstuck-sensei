@@ -157,6 +157,42 @@ describe("SessionConversationShell", () => {
     expect(scrollIntoViewMock).not.toHaveBeenCalled();
   });
 
+  it("uses instant scrolling behavior while the latest message is streaming", () => {
+    const { rerender } = render(<SessionConversationShell items={createItems()} />);
+    const conversationLog = screen.getByRole("log", {
+      name: "Conversation",
+    });
+
+    setScrollMetrics(conversationLog, {
+      clientHeight: 240,
+      scrollHeight: 480,
+      scrollTop: 240,
+    });
+    fireEvent.scroll(conversationLog);
+    scrollIntoViewMock.mockClear();
+
+    rerender(
+      <SessionConversationShell
+        items={createItems([
+          {
+            content: "Still thinking...",
+            id: "message:streaming",
+            kind: "message",
+            persisted: false,
+            role: "assistant",
+            status: "streaming",
+          },
+        ])}
+      />,
+    );
+
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({
+      behavior: "auto",
+      block: "end",
+      inline: "nearest",
+    });
+  });
+
   it("uses instant scrolling behavior when reduced motion is preferred", () => {
     matchMediaMock.mockImplementation(() => createMediaQueryList(true));
 
