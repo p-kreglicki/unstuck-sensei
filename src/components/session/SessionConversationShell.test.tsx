@@ -3,7 +3,7 @@ import { SessionConversationShell } from "./SessionConversationShell";
 import type { SessionThreadItem } from "../../lib/session-thread";
 
 function createItems(
-  overrides: Partial<SessionThreadItem>[] = [],
+  overrides: SessionThreadItem[] = [],
 ): SessionThreadItem[] {
   const base: SessionThreadItem[] = [
     {
@@ -23,9 +23,7 @@ function createItems(
     },
   ];
 
-  return overrides.length === 0
-    ? base
-    : base.concat(overrides as SessionThreadItem[]);
+  return overrides.length === 0 ? base : base.concat(overrides);
 }
 
 function createMediaQueryList(matches: boolean): MediaQueryList {
@@ -71,6 +69,10 @@ function setScrollMetrics(
 describe("SessionConversationShell", () => {
   const matchMediaMock = vi.fn<(query: string) => MediaQueryList>();
   const scrollIntoViewMock = vi.fn();
+  const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "scrollIntoView",
+  );
 
   beforeEach(() => {
     Object.defineProperty(window, "matchMedia", {
@@ -88,6 +90,17 @@ describe("SessionConversationShell", () => {
   afterEach(() => {
     scrollIntoViewMock.mockReset();
     matchMediaMock.mockReset();
+
+    if (originalScrollIntoView) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "scrollIntoView",
+        originalScrollIntoView,
+      );
+      return;
+    }
+
+    Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
   });
 
   it("auto-scrolls when new thread content appears and the user is near the bottom", () => {
