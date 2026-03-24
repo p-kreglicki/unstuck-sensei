@@ -356,4 +356,77 @@ describe("SessionConversationShell", () => {
 
     expect(screen.getByRole("button", { name: "Medium" })).toHaveFocus();
   });
+
+  it("keeps the control ref pointed at the active stage when multiple controls render", () => {
+    const { rerender } = render(
+      <SessionConversationShell
+        activeStage="compose"
+        composer={<textarea aria-label="Session reply" />}
+        items={createItems()}
+      />,
+    );
+
+    rerender(
+      <SessionConversationShell
+        activeStage="energy"
+        items={[
+          ...createItems(),
+          {
+            control: "energy",
+            id: "control:energy",
+            kind: "control",
+          },
+          {
+            control: "steps",
+            id: "control:steps",
+            kind: "control",
+          },
+        ]}
+        renderControl={(control) => (
+          <div>
+            <button type="button">
+              {control === "energy" ? "Energy control" : "Steps control"}
+            </button>
+          </div>
+        )}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Energy control" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Steps control" })).not.toHaveFocus();
+  });
+
+  it("does not steal focus on initial mount when no composer is present", () => {
+    const existingFocus = document.createElement("button");
+    existingFocus.type = "button";
+    existingFocus.textContent = "Existing focus";
+    document.body.appendChild(existingFocus);
+    existingFocus.focus();
+
+    try {
+      render(
+        <SessionConversationShell
+          activeStage="energy"
+          items={[
+            ...createItems(),
+            {
+              control: "energy",
+              id: "control:energy",
+              kind: "control",
+            },
+          ]}
+          renderControl={() => (
+            <div>
+              <button type="button">Energy control</button>
+            </div>
+          )}
+        />,
+      );
+
+      expect(existingFocus).toHaveFocus();
+      expect(screen.getByRole("button", { name: "Energy control" })).not.toHaveFocus();
+    } finally {
+      existingFocus.remove();
+    }
+  });
 });

@@ -124,7 +124,10 @@ export function SessionConversationShell({
 
               return renderedControl ? (
                 <article key={item.id} className="flex justify-start pt-2">
-                  <div ref={controlRef} className="w-full max-w-[86%]">
+                  <div
+                    ref={item.control === activeStage ? controlRef : undefined}
+                    className="w-full max-w-[86%]"
+                  >
                     {renderedControl}
                   </div>
                 </article>
