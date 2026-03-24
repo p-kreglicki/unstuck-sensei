@@ -1,3 +1,4 @@
+import { RefreshCw } from "lucide-react";
 import type { SessionStep } from "../../../shared/session/session-protocol.js";
 
 type StepsListProps = {
@@ -27,12 +28,13 @@ export function StepsList({
           </h3>
         </div>
         <button
-          className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-white/20 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label={isRetrying ? "Retrying" : "Try again"}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 p-0 text-slate-200 transition hover:border-white/20 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isRetrying}
           onClick={onRetry}
           type="button"
         >
-          {isRetrying ? "Retrying…" : "Try again"}
+          <RefreshCw aria-hidden="true" color="white" size={16} />
         </button>
       </div>
 

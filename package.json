@@ -17,6 +17,7 @@
     "@tauri-apps/plugin-deep-link": "^2",
     "@tauri-apps/plugin-shell": "^2",
     "@tauri-apps/plugin-store": "^2",
+    "lucide-react": "^1.6.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router": "^7.6.2"

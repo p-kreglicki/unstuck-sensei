@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { useAuth } from "../hooks/useAuth";
@@ -165,12 +166,13 @@ export function Layout() {
             <p className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
               Unstuck Sensei
             </p>
-            <p className="mt-3 text-sm text-slate-400">
-              A lightweight desktop coach that notices friction and helps you get unstuck.
+            <p className="text-xs text-slate-400">
+              Gentle support for those moments when starting feels hard.
             </p>
           </div>
           <button
-            className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+            aria-label="Sign out"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 p-0 text-slate-200 transition hover:border-white/30 hover:bg-white/5"
             disabled={isLoading}
             onClick={async () => {
               setStatusMessage(null);
@@ -182,7 +184,7 @@ export function Layout() {
             }}
             type="button"
           >
-            Sign out
+            <LogOut aria-hidden="true" color="white" size={16} />
           </button>
         </div>
 
