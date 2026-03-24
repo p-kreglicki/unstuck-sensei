@@ -393,9 +393,9 @@ Tasks:
 - [x] Add a single scroll controller for bottom-stick behavior.
 - [x] Use `useLayoutEffect` or equivalent pre-paint synchronization for append-and-scroll cases.
 - [x] Preserve manual scroll position when the user scrolls away from the bottom.
-- [ ] Ensure `useTimerCountdown()` remains isolated to the inline timer card.
+- [x] Ensure `useTimerCountdown()` remains isolated to the inline timer card.
 - [x] Respect `prefers-reduced-motion` for smooth scrolling and decorative motion.
-- [ ] Verify focus transitions between composer, streamed assistant output, and inline controls.
+- [x] Verify focus transitions between composer, streamed assistant output, and inline controls.
 
 Primary files:
 - `src/components/session/SessionConversationShell.tsx`
@@ -436,9 +436,9 @@ Exit criteria:
 - [x] Move steps actions into the thread
 - [x] Move timer and check-in cards into the thread
 - [x] Add centralized scroll/focus handling
-- [ ] Keep countdown re-renders isolated
+- [x] Keep countdown re-renders isolated
 - [x] Add accessible log semantics
-- [ ] Update automated tests and manual validation notes
+- [x] Update automated tests and manual validation notes
 
 ## Execution Plan
 
@@ -752,7 +752,7 @@ Mitigation:
 - [ ] Existing session persistence, retry, timer, and check-in behavior continue to work.
 - [ ] Resumed drafts and older sessions still render a coherent thread even if some early turns must be synthesized.
 - [x] The conversation thread is exposed with appropriate live-region semantics for sequential updates.
-- [ ] Timer countdown updates do not cause the entire transcript to re-render every second.
+- [x] Timer countdown updates do not cause the entire transcript to re-render every second.
 - [x] Smooth scrolling and decorative motion degrade when reduced-motion is requested.
 
 ## Test Plan
@@ -779,6 +779,21 @@ Mitigation:
   - streaming while scrolled away from bottom
   - reduced-motion enabled
   - screen-reader announcement behavior for appended turns
+
+### Validation Notes
+
+- Automated coverage added for:
+  - stage-aware focus transitions between composer and inline controls
+  - preserving focus on control-only initial mount
+  - reduced-motion scroll behavior
+  - countdown-hook isolation to the inline timer card
+- Verification run on 2026-03-24:
+  - `npm test -- src/components/session/SessionConversationShell.test.tsx`
+  - `npm test -- src/pages/Session.test.tsx`
+  - `npm test --`
+- Manual validation status on 2026-03-24:
+  - Reduced motion and scroll-at-bottom/away behavior were verified through focused component tests in this branch.
+  - Resume compatibility and screen-reader announcement behavior still need interactive manual smoke validation before final PR closeout.
 
 ## Implementation Order
 

@@ -1,10 +1,12 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import type {
+  SessionStage,
   SessionThreadControlItem,
   SessionThreadItem,
 } from "../../lib/session-thread";
 
 type SessionConversationShellProps = {
+  activeStage: SessionStage;
   composer?: ReactNode;
   items: SessionThreadItem[];
   renderControl?(control: SessionThreadControlItem["control"]): ReactNode | null;
@@ -15,6 +17,14 @@ const roleLabels = {
   user: "You",
 } as const;
 const STICKY_SCROLL_THRESHOLD_PX = 96;
+const FOCUSABLE_SELECTOR = [
+  "button:not([disabled])",
+  "textarea:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "a[href]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(", ");
 
 function isNearBottom(element: HTMLDivElement) {
   return (
@@ -35,13 +45,26 @@ function shouldUseInstantScroll(item: SessionThreadItem | undefined) {
   return item?.kind === "message" && item.status === "streaming";
 }
 
+function focusFirstElement(container: HTMLDivElement | null) {
+  const target = container?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+
+  if (target && document.activeElement !== target) {
+    target.focus();
+  }
+}
+
 export function SessionConversationShell({
+  activeStage,
   composer,
   items,
   renderControl,
 }: SessionConversationShellProps) {
+  const composerRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const controlRef = useRef<HTMLDivElement | null>(null);
+  const previousStageRef = useRef<SessionStage | null>(null);
   const shouldStickToBottomRef = useRef(true);
+  const hasComposer = composer !== undefined && composer !== null;
 
   useLayoutEffect(() => {
     if (!shouldStickToBottomRef.current) {
@@ -56,6 +79,22 @@ export function SessionConversationShell({
       inline: "nearest",
     });
   }, [items]);
+
+  useLayoutEffect(() => {
+    const previousStage = previousStageRef.current;
+
+    if (previousStage === activeStage) {
+      return;
+    }
+
+    // On initial mount, only text-entry stages take focus immediately.
+    // Control-only mounts preserve the page's existing focus until a stage transition.
+    if (previousStage !== null || hasComposer) {
+      focusFirstElement(hasComposer ? composerRef.current : controlRef.current);
+    }
+
+    previousStageRef.current = activeStage;
+  }, [activeStage, hasComposer]);
 
   return (
     <section
@@ -87,7 +126,12 @@ export function SessionConversationShell({
 
               return renderedControl ? (
                 <article key={item.id} className="flex justify-start pt-2">
-                  <div className="w-full max-w-[86%]">{renderedControl}</div>
+                  <div
+                    ref={item.control === activeStage ? controlRef : undefined}
+                    className="w-full max-w-[86%]"
+                  >
+                    {renderedControl}
+                  </div>
                 </article>
               ) : null;
             }
@@ -131,7 +175,10 @@ export function SessionConversationShell({
       </div>
 
       {composer ? (
-        <div className="border-t border-white/10 bg-slate-950/80 px-4 py-4 backdrop-blur">
+        <div
+          ref={composerRef}
+          className="border-t border-white/10 bg-slate-950/80 px-4 py-4 backdrop-blur"
+        >
           {composer}
         </div>
       ) : null}
