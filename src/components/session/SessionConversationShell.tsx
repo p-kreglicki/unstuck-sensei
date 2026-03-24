@@ -87,6 +87,8 @@ export function SessionConversationShell({
       return;
     }
 
+    // On initial mount, only text-entry stages take focus immediately.
+    // Control-only mounts preserve the page's existing focus until a stage transition.
     if (previousStage !== null || hasComposer) {
       focusFirstElement(hasComposer ? composerRef.current : controlRef.current);
     }

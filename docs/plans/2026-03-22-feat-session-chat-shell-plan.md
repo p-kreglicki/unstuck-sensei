@@ -438,7 +438,7 @@ Exit criteria:
 - [x] Add centralized scroll/focus handling
 - [x] Keep countdown re-renders isolated
 - [x] Add accessible log semantics
-- [ ] Update automated tests and manual validation notes
+- [x] Update automated tests and manual validation notes
 
 ## Execution Plan
 
@@ -779,6 +779,21 @@ Mitigation:
   - streaming while scrolled away from bottom
   - reduced-motion enabled
   - screen-reader announcement behavior for appended turns
+
+### Validation Notes
+
+- Automated coverage added for:
+  - stage-aware focus transitions between composer and inline controls
+  - preserving focus on control-only initial mount
+  - reduced-motion scroll behavior
+  - countdown-hook isolation to the inline timer card
+- Verification run on 2026-03-24:
+  - `npm test -- src/components/session/SessionConversationShell.test.tsx`
+  - `npm test -- src/pages/Session.test.tsx`
+  - `npm test --`
+- Manual validation status on 2026-03-24:
+  - Reduced motion and scroll-at-bottom/away behavior were verified through focused component tests in this branch.
+  - Resume compatibility and screen-reader announcement behavior still need interactive manual smoke validation before final PR closeout.
 
 ## Implementation Order
 
