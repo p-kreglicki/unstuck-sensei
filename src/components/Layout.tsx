@@ -5,6 +5,7 @@ import { useAuth } from "../hooks/useAuth";
 import { type DetectionState, useDetection } from "../hooks/useDetection";
 import { formatError } from "../lib/formatError";
 import { DetectionNudgeBanner } from "./DetectionNudgeBanner";
+import { TitleBarDragRegion } from "./TitleBarDragRegion";
 
 const navItems = [
   { label: "Session", to: "/" },
@@ -157,9 +158,10 @@ export function Layout() {
   return (
     <div className="min-h-screen bg-transparent px-4 py-5 text-slate-100">
       <div
-        className="mx-auto flex h-[calc(100vh-2.5rem)] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-[32px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/50 backdrop-blur"
+        className="mx-auto flex h-[calc(100vh-2.5rem)] min-h-0 w-full max-w-md flex-col overflow-hidden p-5 shadow-2xl shadow-slate-950/50 backdrop-blur"
         data-testid="app-frame"
       >
+        <TitleBarDragRegion />
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-teal-300/80">

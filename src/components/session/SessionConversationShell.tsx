@@ -50,6 +50,21 @@ function focusFirstElement(container: HTMLDivElement | null) {
   }
 }
 
+function threadItemSpacingClass(
+  item: SessionThreadItem,
+  previousItem: SessionThreadItem | undefined,
+) {
+  if (!previousItem) {
+    return "";
+  }
+
+  if (item.kind === "control" || previousItem.kind === "control") {
+    return "mt-3";
+  }
+
+  return "mt-2";
+}
+
 function SenseiAvatar() {
   return (
     <img
@@ -122,13 +137,18 @@ export function SessionConversationShell({
         }}
         role="log"
       >
-        <div className="space-y-4">
-          {items.map((item) => {
+        <div>
+          {items.map((item, index) => {
+            const spacingClass = threadItemSpacingClass(item, items[index - 1]);
+
             if (item.kind === "control") {
               const renderedControl = renderControl?.(item.control) ?? null;
 
               return renderedControl ? (
-                <article key={item.id} className="flex justify-start pt-2">
+                <article
+                  key={item.id}
+                  className={["flex justify-start", spacingClass].join(" ").trim()}
+                >
                   <div
                     ref={item.control === activeStage ? controlRef : undefined}
                     className="w-full max-w-[86%]"
@@ -140,32 +160,32 @@ export function SessionConversationShell({
             }
 
             const isUser = item.role === "user";
-            const isPrompt = item.kind === "prompt";
             const isStreaming = item.kind === "message" && item.status === "streaming";
 
             return (
               <article
                 key={item.id}
-                className={isUser ? "flex justify-end" : "flex justify-start"}
+                className={[
+                  isUser ? "flex justify-end" : "flex justify-start",
+                  spacingClass,
+                ].join(" ").trim()}
               >
                 {isUser ? (
                   <div
                     className={[
-                      "max-w-[86%] rounded-[28px] rounded-br-none border px-4 py-4 shadow-sm",
+                      "max-w-[86%] rounded-2xl rounded-br-none border px-3 py-3 shadow-sm",
                       "border-white/10 bg-slate-950/80 text-slate-100",
                     ].join(" ")}
                   >
                     <p className="whitespace-pre-wrap text-sm leading-6">{item.content}</p>
                   </div>
                 ) : (
-                  <div className="grid max-w-[92%] grid-cols-[auto_minmax(0,1fr)] items-end gap-2">
+                  <div className="flex max-w-[92%] items-end gap-2">
                     <SenseiAvatar />
                     <div
                       className={[
-                        "min-w-0 max-w-[calc(100%-2.75rem)] rounded-[24px] rounded-bl-none border px-4 py-3 shadow-sm",
-                        isPrompt
-                          ? "border-white/10 bg-white/[0.05] text-slate-100"
-                          : "border-teal-300/20 bg-teal-300/10 text-teal-50",
+                        "min-w-0 flex-1 rounded-2xl rounded-bl-none border px-3 py-3 shadow-sm",
+                        "border-white/10 bg-white/[0.05] text-slate-100",
                       ].join(" ")}
                     >
                       <p className="whitespace-pre-wrap text-sm leading-6">{item.content}</p>

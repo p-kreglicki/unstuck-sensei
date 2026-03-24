@@ -2,7 +2,8 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Layout } from "./Layout";
 
-const { isTauriMock, useAuthMock } = vi.hoisted(() => ({
+const { getCurrentWindowMock, isTauriMock, useAuthMock } = vi.hoisted(() => ({
+  getCurrentWindowMock: vi.fn(),
   isTauriMock: vi.fn(),
   useAuthMock: vi.fn(),
 }));
@@ -10,6 +11,10 @@ const { isTauriMock, useAuthMock } = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   isTauri: () => isTauriMock(),
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => getCurrentWindowMock(),
 }));
 
 vi.mock("../hooks/useAuth", () => ({
@@ -36,6 +41,9 @@ vi.mock("./DetectionNudgeBanner", () => ({
 describe("Layout", () => {
   beforeEach(() => {
     isTauriMock.mockReturnValue(false);
+    getCurrentWindowMock.mockReturnValue({
+      startDragging: vi.fn(),
+    });
     useAuthMock.mockReturnValue({
       isLoading: false,
       signOut: vi.fn().mockResolvedValue({ error: null }),
