@@ -371,22 +371,22 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     try {
       if (sessionRow) {
         const nextSession = await persistSessionPatch({
-            currentSession: sessionRow,
-            patch: {
-              source: sessionRow.source ?? requestedSource,
-              stuck_on: stuckOn,
-            },
-            userMessage: hasMatchingConversationMessage({
-              content: stuckOn,
-              messages,
-              role: "user",
-            })
-              ? undefined
-              : {
-                  content: stuckOn,
+          currentSession: sessionRow,
+          patch: {
+            source: sessionRow.source ?? requestedSource,
+            stuck_on: stuckOn,
+          },
+          userMessage: hasMatchingConversationMessage({
+            content: stuckOn,
+            messages,
+            role: "user",
+          })
+            ? undefined
+            : {
+                content: stuckOn,
                 role: "user",
               },
-          });
+        });
 
         setSessionRow(nextSession.nextSession);
         setStuckOnInput(nextSession.nextSession.stuck_on ?? stuckOn);
@@ -396,7 +396,6 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
         if (openingUserMessage) {
           setMessages((current) => [...current, openingUserMessage]);
         }
-
       } else {
         const nextSession = await createSessionDraft({
           source: requestedSource,
