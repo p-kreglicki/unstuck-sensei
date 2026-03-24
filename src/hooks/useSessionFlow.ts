@@ -36,7 +36,7 @@ import {
   type SessionStep,
   type StructuredChatResponse,
 } from "../../shared/session/session-protocol.js";
-import { formatSessionReminder, moveStep } from "../lib/session-flow";
+import { formatSessionReminder } from "../lib/session-flow";
 import {
   deriveThreadItems,
   hasMatchingConversationMessage,
@@ -539,25 +539,6 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     }
   }
 
-  async function handleMoveStep(fromIndex: number, toIndex: number) {
-    if (!sessionRow) {
-      return;
-    }
-
-    const nextSteps = moveStep(steps, fromIndex, toIndex);
-    setSteps(nextSteps);
-
-    try {
-      const nextSession = await updateSessionDraft(sessionRow.id, {
-        steps: nextSteps,
-      });
-      setSessionRow(nextSession);
-    } catch (error) {
-      setStatusMessage(toDisplayError(error, "Unable to save the new step order."));
-      setSteps(steps);
-    }
-  }
-
   async function runTimerAction(action: () => Promise<void>) {
     if (timerActionInFlightRef.current) {
       return;
@@ -915,7 +896,6 @@ export function useSessionFlow({ locationState }: UseSessionFlowOptions) {
     handleConfirm,
     handleExtendTimer,
     handleGenerateSteps,
-    handleMoveStep,
     handleRetry,
     handleSaveStuckTask,
     handleStopTimer,
