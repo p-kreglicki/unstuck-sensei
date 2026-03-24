@@ -40,6 +40,12 @@ struct AppNavigatePayload {
     source: Option<&'static str>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DetectionEffectSyncMode {
+    AllowTraySync,
+    RuntimeOnly,
+}
+
 fn build_tray_menu<M: Manager<Wry>>(
     manager: &M,
     signed_in: bool,
@@ -148,10 +154,25 @@ pub(crate) fn execute_detection_effects(
     effects: Vec<DetectionRuntimeEffect>,
     force_tray_sync: bool,
 ) -> Result<(), String> {
-    let should_sync_tray = force_tray_sync
-        || effects
-            .iter()
-            .any(|effect| matches!(effect, DetectionRuntimeEffect::EmitStateChanged(_)));
+    execute_detection_effects_with_mode(
+        app,
+        effects,
+        force_tray_sync,
+        DetectionEffectSyncMode::AllowTraySync,
+    )
+}
+
+fn execute_detection_effects_with_mode(
+    app: &AppHandle<Wry>,
+    effects: Vec<DetectionRuntimeEffect>,
+    force_tray_sync: bool,
+    sync_mode: DetectionEffectSyncMode,
+) -> Result<(), String> {
+    let should_sync_tray = should_sync_tray_after_detection_effects(
+        &effects,
+        force_tray_sync,
+        sync_mode,
+    );
 
     let effect_error = execute_runtime_effects(app, effects).err();
 
@@ -166,6 +187,22 @@ pub(crate) fn execute_detection_effects(
         (Some(effect_error), Some(tray_error)) => Err(format!(
             "{effect_error}; failed to sync tray menu: {tray_error}"
         )),
+    }
+}
+
+fn should_sync_tray_after_detection_effects(
+    effects: &[DetectionRuntimeEffect],
+    force_tray_sync: bool,
+    sync_mode: DetectionEffectSyncMode,
+) -> bool {
+    match sync_mode {
+        DetectionEffectSyncMode::AllowTraySync => {
+            force_tray_sync
+                || effects
+                    .iter()
+                    .any(|effect| matches!(effect, DetectionRuntimeEffect::EmitStateChanged(_)))
+        }
+        DetectionEffectSyncMode::RuntimeOnly => false,
     }
 }
 
@@ -215,7 +252,14 @@ fn sync_detection_window_visibility(app: &AppHandle<Wry>, visible: bool) {
     let mut state = recover_detection_state_lock(detection_state.inner(), "tray_visibility");
     let effects = state.set_app_foregrounded(visible);
 
-    if let Err(error) = execute_detection_effects(app, effects, false) {
+    // Visibility changes can emit detection state updates, but they must not sync the tray menu.
+    // Re-entering tray menu mutation while a tray click is being processed can freeze the app.
+    if let Err(error) = execute_detection_effects_with_mode(
+        app,
+        effects,
+        false,
+        DetectionEffectSyncMode::RuntimeOnly,
+    ) {
         eprintln!("[tray] failed to execute detection effects: {error}");
     }
 }
@@ -419,4 +463,48 @@ pub fn run() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_changed_effect() -> DetectionRuntimeEffect {
+        DetectionRuntimeEffect::EmitStateChanged(crate::detection::DetectionStatusResponse {
+            nudge_active: false,
+            resume_in_seconds: None,
+            status: DetectionStatus::Active,
+        })
+    }
+
+    #[test]
+    fn tray_sync_runs_for_general_detection_state_changes() {
+        let effects = vec![state_changed_effect()];
+
+        assert!(should_sync_tray_after_detection_effects(
+            &effects,
+            false,
+            DetectionEffectSyncMode::AllowTraySync,
+        ));
+    }
+
+    #[test]
+    fn tray_sync_is_skipped_for_visibility_state_changes() {
+        let effects = vec![state_changed_effect()];
+
+        assert!(!should_sync_tray_after_detection_effects(
+            &effects,
+            false,
+            DetectionEffectSyncMode::RuntimeOnly,
+        ));
+    }
+
+    #[test]
+    fn runtime_only_mode_ignores_forced_tray_sync() {
+        assert!(!should_sync_tray_after_detection_effects(
+            &[],
+            true,
+            DetectionEffectSyncMode::RuntimeOnly,
+        ));
+    }
 }

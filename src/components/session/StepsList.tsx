@@ -4,8 +4,6 @@ type StepsListProps = {
   isConfirming: boolean;
   isRetrying: boolean;
   onConfirm(): void;
-  onMoveDown(index: number): void;
-  onMoveUp(index: number): void;
   onRetry(): void;
   steps: SessionStep[];
 };
@@ -14,8 +12,6 @@ export function StepsList({
   isConfirming,
   isRetrying,
   onConfirm,
-  onMoveDown,
-  onMoveUp,
   onRetry,
   steps,
 }: StepsListProps) {
@@ -52,24 +48,6 @@ export function StepsList({
               </div>
               <div className="flex-1">
                 <p className="text-sm leading-6 text-slate-100">{step.text}</p>
-                <div className="mt-4 flex gap-2">
-                  <button
-                    className="rounded-full border border-white/10 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-slate-300 transition hover:border-white/20 hover:bg-white/5 disabled:opacity-40"
-                    disabled={index === 0}
-                    onClick={() => onMoveUp(index)}
-                    type="button"
-                  >
-                    Up
-                  </button>
-                  <button
-                    className="rounded-full border border-white/10 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-slate-300 transition hover:border-white/20 hover:bg-white/5 disabled:opacity-40"
-                    disabled={index === steps.length - 1}
-                    onClick={() => onMoveDown(index)}
-                    type="button"
-                  >
-                    Down
-                  </button>
-                </div>
               </div>
             </div>
           </li>

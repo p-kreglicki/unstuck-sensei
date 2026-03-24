@@ -246,7 +246,7 @@ describe("Session", () => {
       name: "Conversation",
     });
 
-    expect(screen.getByText("Session chat")).toBeInTheDocument();
+    expect(screen.queryByText("Session chat")).not.toBeInTheDocument();
     expect(conversationLog).toHaveClass("overflow-y-auto");
     expect(within(conversationLog).getByText("What are you stuck on?")).toBeInTheDocument();
     expect(screen.getByLabelText("The sticky task")).toBeInTheDocument();
@@ -484,6 +484,8 @@ describe("Session", () => {
       within(conversationLog).getByText("Choose the one CTA and remove the rest."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Up" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Down" })).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Start 25-minute timer" }),
     ).toBeInTheDocument();

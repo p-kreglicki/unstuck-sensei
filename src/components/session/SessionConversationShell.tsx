@@ -4,6 +4,7 @@ import type {
   SessionThreadControlItem,
   SessionThreadItem,
 } from "../../lib/session-thread";
+import senseiDefaultAvatar from "../../assets/sensei-default-avatar.png";
 
 type SessionConversationShellProps = {
   activeStage: SessionStage;
@@ -12,10 +13,6 @@ type SessionConversationShellProps = {
   renderControl?(control: SessionThreadControlItem["control"]): ReactNode | null;
 };
 
-const roleLabels = {
-  assistant: "Sensei",
-  user: "You",
-} as const;
 const STICKY_SCROLL_THRESHOLD_PX = 96;
 const FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
@@ -55,13 +52,13 @@ function focusFirstElement(container: HTMLDivElement | null) {
 
 function SenseiAvatar() {
   return (
-    <div
+    <img
+      alt=""
       aria-hidden="true"
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.28),rgba(148,163,184,0.14)_45%,rgba(15,23,42,0.92)_100%)] text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-100 shadow-[0_4px_12px_rgba(2,6,23,0.18)]"
+      className="h-8 w-8 shrink-0 rounded-full object-cover shadow-[0_4px_12px_rgba(2,6,23,0.18)]"
       data-testid="sensei-avatar"
-    >
-      S
-    </div>
+      src={senseiDefaultAvatar}
+    />
   );
 }
 
@@ -110,17 +107,11 @@ export function SessionConversationShell({
 
   return (
     <section
-      aria-labelledby="conversation-heading"
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.04] shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur"
     >
-      <div className="border-b border-white/10 bg-white/[0.03] px-4 py-4">
-        <p className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
-          Session chat
-        </p>
-        <h2 id="conversation-heading" className="sr-only">
-          Conversation
-        </h2>
-      </div>
+      <h2 id="conversation-heading" className="sr-only">
+        Conversation
+      </h2>
 
       <div
         aria-labelledby="conversation-heading"
@@ -160,7 +151,7 @@ export function SessionConversationShell({
                 {isUser ? (
                   <div
                     className={[
-                      "max-w-[86%] rounded-[28px] border px-4 py-4 shadow-sm",
+                      "max-w-[86%] rounded-[28px] rounded-br-none border px-4 py-4 shadow-sm",
                       "border-white/10 bg-slate-950/80 text-slate-100",
                     ].join(" ")}
                   >
@@ -171,7 +162,7 @@ export function SessionConversationShell({
                     <SenseiAvatar />
                     <div
                       className={[
-                        "min-w-0 max-w-[calc(100%-2.75rem)] rounded-[24px] border px-4 py-3 shadow-sm",
+                        "min-w-0 max-w-[calc(100%-2.75rem)] rounded-[24px] rounded-bl-none border px-4 py-3 shadow-sm",
                         isPrompt
                           ? "border-white/10 bg-white/[0.05] text-slate-100"
                           : "border-teal-300/20 bg-teal-300/10 text-teal-50",

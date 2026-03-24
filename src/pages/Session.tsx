@@ -49,8 +49,6 @@ export function Session() {
             isConfirming={flow.isSubmittingTimerAction}
             isRetrying={flow.isRetrying || flow.chatState.isStreaming}
             onConfirm={flow.handleConfirm}
-            onMoveDown={(index) => void flow.handleMoveStep(index, index + 1)}
-            onMoveUp={(index) => void flow.handleMoveStep(index, index - 1)}
             onRetry={() => void flow.handleRetry()}
             steps={flow.steps}
           />
