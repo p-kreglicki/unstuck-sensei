@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { useAuth } from "../hooks/useAuth";
@@ -155,22 +156,23 @@ export function Layout() {
     : "mt-6 min-h-0 flex-1 overflow-y-auto pr-1";
 
   return (
-    <div className="min-h-screen bg-transparent px-4 py-5 text-slate-100">
+    <div className="min-h-screen bg-transparent px-4 py-0 text-slate-100">
       <div
-        className="mx-auto flex h-[calc(100vh-2.5rem)] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-[32px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/50 backdrop-blur"
+        className="mx-auto flex h-[calc(100vh-2.5rem)] min-h-0 w-full max-w-md flex-col overflow-hidden p-5"
         data-testid="app-frame"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
+            <p className="text-base text-teal-300/80">
               Unstuck Sensei
             </p>
-            <p className="mt-3 text-sm text-slate-400">
-              A lightweight desktop coach that notices friction and helps you get unstuck.
+            <p className="text-xs text-slate-400">
+              Gentle support for those moments when starting feels hard.
             </p>
           </div>
           <button
-            className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+            aria-label="Sign out"
+            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border border-white/10 p-0 text-slate-200 transition hover:border-white/30 hover:bg-white/5"
             disabled={isLoading}
             onClick={async () => {
               setStatusMessage(null);
@@ -182,7 +184,7 @@ export function Layout() {
             }}
             type="button"
           >
-            Sign out
+            <LogOut aria-hidden="true" color="white" size={16} />
           </button>
         </div>
 

@@ -2,8 +2,18 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { Login } from "./Login";
 
-const { useAuthMock } = vi.hoisted(() => ({
+const { getCurrentWindowMock, isTauriMock, useAuthMock } = vi.hoisted(() => ({
+  getCurrentWindowMock: vi.fn(),
+  isTauriMock: vi.fn(),
   useAuthMock: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => isTauriMock(),
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => getCurrentWindowMock(),
 }));
 
 vi.mock("../hooks/useAuth", () => ({
@@ -11,6 +21,13 @@ vi.mock("../hooks/useAuth", () => ({
 }));
 
 describe("Login", () => {
+  beforeEach(() => {
+    isTauriMock.mockReturnValue(false);
+    getCurrentWindowMock.mockReturnValue({
+      startDragging: vi.fn(),
+    });
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
   });
