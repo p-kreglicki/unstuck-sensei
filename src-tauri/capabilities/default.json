@@ -5,7 +5,6 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:window:allow-set-background-color",
     "shell:allow-open",
     "deep-link:default",
     "autostart:allow-enable",

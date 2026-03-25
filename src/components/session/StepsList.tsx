@@ -29,7 +29,7 @@ export function StepsList({
         </div>
         <button
           aria-label={isRetrying ? "Retrying" : "Try again"}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 p-0 text-slate-200 transition hover:border-white/20 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border border-white/10 p-0 text-slate-200 transition hover:border-white/20 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isRetrying}
           onClick={onRetry}
           type="button"

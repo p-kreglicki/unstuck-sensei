@@ -156,14 +156,14 @@ export function Layout() {
     : "mt-6 min-h-0 flex-1 overflow-y-auto pr-1";
 
   return (
-    <div className="min-h-screen bg-transparent px-4 py-5 text-slate-100">
+    <div className="min-h-screen bg-transparent px-4 py-0 text-slate-100">
       <div
         className="mx-auto flex h-[calc(100vh-2.5rem)] min-h-0 w-full max-w-md flex-col overflow-hidden p-5"
         data-testid="app-frame"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
+            <p className="text-base text-teal-300/80">
               Unstuck Sensei
             </p>
             <p className="text-xs text-slate-400">
@@ -172,7 +172,7 @@ export function Layout() {
           </div>
           <button
             aria-label="Sign out"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 p-0 text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border border-white/10 p-0 text-slate-200 transition hover:border-white/30 hover:bg-white/5"
             disabled={isLoading}
             onClick={async () => {
               setStatusMessage(null);

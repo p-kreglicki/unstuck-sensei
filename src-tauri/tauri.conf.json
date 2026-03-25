@@ -22,7 +22,7 @@
         "transparent": false,
         "titleBarStyle": "Transparent",
         "theme": "Dark",
-        "hiddenTitle": false
+        "hiddenTitle": true
       }
     ],
     "security": {
